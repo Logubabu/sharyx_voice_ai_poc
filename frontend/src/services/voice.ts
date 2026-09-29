@@ -116,6 +116,11 @@ export class VoiceCallService {
       console.log('[AUDIO] Remote track:', event.track.kind);
       const stream = event.streams[0] || new MediaStream([event.track]);
       if (this.remoteAudio) {
+        if (!document.body.contains(this.remoteAudio)) {
+          document.body.appendChild(this.remoteAudio);
+        }
+        this.remoteAudio.muted = false;
+        this.remoteAudio.volume = 1.0;
         this.remoteAudio.srcObject = stream;
         try {
           await this.remoteAudio.play();
@@ -124,6 +129,24 @@ export class VoiceCallService {
           console.error('[AUDIO] Playback failed:', error);
         }
       }
+
+      // Log inbound-rtp audio bytesReceived every 2 seconds
+      const statsInterval = setInterval(async () => {
+        if (!this.peerConnection || this.peerConnection.connectionState !== 'connected') {
+          clearInterval(statsInterval);
+          return;
+        }
+        try {
+          const stats = await this.peerConnection.getStats();
+          stats.forEach((report) => {
+            if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+              console.log(`[AUDIO][STATS] inbound-rtp audio bytesReceived: ${report.bytesReceived}`);
+            }
+          });
+        } catch (err) {
+          // ignore stats error
+        }
+      }, 2000);
     };
 
     // 3. Create DataChannel for transcript & state sync
@@ -180,6 +203,9 @@ export class VoiceCallService {
         const data = JSON.parse(event.data);
         if (data.type === 'state' && data.state) {
           this.onStateUpdate?.(data.state as CallState);
+        } else if (data.type === 'error') {
+          console.error('[DATACHANNEL][ERROR]', data.message);
+          this.onStateUpdate?.('error');
         } else if (data.type === 'transcript' && data.text) {
           this.onTranscriptUpdate?.({
             id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,

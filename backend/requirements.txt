@@ -12,3 +12,4 @@ google-api-core>=2.14.0
 google-generativeai>=0.8.0
 sarvamai>=0.1.0
 elevenlabs>=1.0.0
+requests>=2.31.0

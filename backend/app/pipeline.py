@@ -104,8 +104,9 @@ class DiagnosticEventProcessor(FrameProcessor):
                 })
 
         elif isinstance(frame, ErrorFrame):
+            processor = getattr(frame, "processor", "pipeline")
             error_msg = getattr(frame, "error", str(frame))
-            logger.error(f"[PIPELINE][ERROR] {error_msg}")
+            logger.error(f"[PIPELINE][ERROR] [{processor}] {error_msg}")
 
         await self.push_frame(frame, direction)
 
@@ -143,6 +144,7 @@ class TTSMonitor(FrameProcessor):
             logger.info(f"[TTS] Stopped, frames: {self.tts_frame_count}")
             if self.tts_frame_count == 0:
                 logger.error("[TTS][FATAL] ZERO audio frames produced")
+                self._send_app_message({"type": "error", "message": "TTS produced no audio"})
             self._send_app_message({"type": "state", "state": "listening"})
 
         await self.push_frame(frame, direction)
@@ -241,6 +243,9 @@ class VoicePipelineManager:
         }
 
         logger.info(f"[PIPELINE] Pipeline started")
+
+        # Add initial greeting prompt so context is valid for Gemini (has non-system message)
+        context.add_message({"role": "user", "content": "Greet the user in one short sentence."})
 
         # Queue LLMRunFrame so bot speaks first on connect
         await task.queue_frame(LLMRunFrame())

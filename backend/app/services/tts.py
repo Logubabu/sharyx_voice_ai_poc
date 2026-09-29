@@ -17,8 +17,8 @@ def create_tts_service(cfg: Config) -> Any:
             raise RuntimeError("Sarvam TTS initialization failed: SARVAM_API_KEY is not configured.")
         try:
             from pipecat.services.sarvam.tts import SarvamTTSService
-            model = getattr(cfg, "SARVAM_MODEL", "bulbul:v3")
-            voice = getattr(cfg, "SARVAM_VOICE_ID", None) or "shubh"
+            model = cfg.SARVAM_TTS_MODEL
+            voice = cfg.SARVAM_TTS_VOICE
             settings = SarvamTTSService.Settings(model=model, voice=voice)
             service = SarvamTTSService(api_key=sarvam_key, settings=settings)
             logger.info(f"[TTS] Provider: sarvam | Voice: {voice} | Model: {model} | Initialized")
