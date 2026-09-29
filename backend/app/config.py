@@ -39,7 +39,8 @@ class Config:
             "You are a helpful Voice AI assistant.\n\n"
             "Keep your responses concise and conversational because your responses will be spoken aloud.\n\n"
             "Do not produce unnecessary long explanations.\n\n"
-            "If the user interrupts you, stop your current response and listen to the user's new request."
+            "If the user interrupts you, stop your current response and listen to the user's new request.\n\n"
+            "Reply in plain spoken sentences. No markdown, bullet points, emojis or symbols."
         ),
     )
 

@@ -6,6 +6,7 @@ from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     AudioRawFrame,
+    ErrorFrame,
     Frame,
     InputAudioRawFrame,
     LLMRunFrame,
@@ -13,6 +14,7 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
+    TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
@@ -56,7 +58,6 @@ class DiagnosticEventProcessor(FrameProcessor):
         super().__init__()
         self.connection = connection
         self.current_ai_response = ""
-        self.tts_frame_count = 0
 
     def _send_app_message(self, data: dict):
         if self.connection and hasattr(self.connection, "send_app_message"):
@@ -102,19 +103,46 @@ class DiagnosticEventProcessor(FrameProcessor):
                     "timestamp": time.strftime("%I:%M %p"),
                 })
 
-        elif isinstance(frame, TTSStartedFrame):
+        elif isinstance(frame, ErrorFrame):
+            error_msg = getattr(frame, "error", str(frame))
+            logger.error(f"[PIPELINE][ERROR] {error_msg}")
+
+        await self.push_frame(frame, direction)
+
+
+class TTSMonitor(FrameProcessor):
+    """Monitors TTS output frames immediately after the TTS service."""
+
+    def __init__(self, connection: Any = None):
+        super().__init__()
+        self.connection = connection
+        self.tts_frame_count = 0
+
+    def _send_app_message(self, data: dict):
+        if self.connection and hasattr(self.connection, "send_app_message"):
+            try:
+                self.connection.send_app_message(data)
+            except Exception as e:
+                logger.warning(f"[AUDIO] Notice sending app message over data channel: {e}")
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, TTSStartedFrame):
             logger.info("[TTS] Started")
             self.tts_frame_count = 0
             self._send_app_message({"type": "state", "state": "speaking"})
 
-        elif isinstance(frame, AudioRawFrame) and not isinstance(frame, InputAudioRawFrame):
+        elif isinstance(frame, TTSAudioRawFrame):
             self.tts_frame_count += 1
-            if self.tts_frame_count % 20 == 0 or self.tts_frame_count == 1:
-                logger.info(f"[TTS] audio frame received [frames: {self.tts_frame_count}]")
-                logger.info(f"[AUDIO-OUT] sending audio frame [frames: {self.tts_frame_count}]")
+            if self.tts_frame_count == 1 or self.tts_frame_count % 25 == 0:
+                sample_rate = getattr(frame, "sample_rate", "unknown")
+                logger.info(f"[TTS] audio frames: {self.tts_frame_count} (sample_rate: {sample_rate})")
 
         elif isinstance(frame, TTSStoppedFrame):
-            logger.info(f"[TTS] Audio generated [total frames: {self.tts_frame_count}]")
+            logger.info(f"[TTS] Stopped, frames: {self.tts_frame_count}")
+            if self.tts_frame_count == 0:
+                logger.error("[TTS][FATAL] ZERO audio frames produced")
             self._send_app_message({"type": "state", "state": "listening"})
 
         await self.push_frame(frame, direction)
@@ -169,10 +197,11 @@ class VoicePipelineManager:
 
         audio_debug = AudioDebugProcessor()
         diagnostic_processor = DiagnosticEventProcessor(connection=connection)
+        tts_monitor = TTSMonitor(connection=connection)
 
         logger.info(f"[PIPELINE] Pipeline created")
 
-        # Pipeline order: transport.input(), audio_debug, stt, aggregators.user(), llm, diagnostic_processor, tts, transport.output(), aggregators.assistant()
+        # Pipeline order: transport.input(), audio_debug, stt, aggregators.user(), llm, diagnostic_processor, tts, TTSMonitor, transport.output(), aggregators.assistant()
         pipeline_elements = [
             transport.input(),
             audio_debug,
@@ -181,6 +210,7 @@ class VoicePipelineManager:
             llm,
             diagnostic_processor,
             tts,
+            tts_monitor,
             transport.output(),
             aggregators.assistant(),
         ]

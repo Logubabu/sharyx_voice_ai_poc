@@ -10,6 +10,23 @@ def create_tts_service(cfg: Config) -> Any:
     provider = cfg.TTS_PROVIDER.lower()
     logger.info(f"[PIPELINE] Creating TTS (Provider: '{provider}')")
 
+    if provider == "sarvam":
+        sarvam_key = cfg.SARVAM_API_KEY or cfg.TTS_API_KEY
+        if not sarvam_key:
+            logger.error("[TTS][FATAL] Sarvam API key is not configured (SARVAM_API_KEY missing).")
+            raise RuntimeError("Sarvam TTS initialization failed: SARVAM_API_KEY is not configured.")
+        try:
+            from pipecat.services.sarvam.tts import SarvamTTSService
+            model = getattr(cfg, "SARVAM_MODEL", "bulbul:v3")
+            voice = getattr(cfg, "SARVAM_VOICE_ID", None) or "shubh"
+            settings = SarvamTTSService.Settings(model=model, voice=voice)
+            service = SarvamTTSService(api_key=sarvam_key, settings=settings)
+            logger.info(f"[TTS] Provider: sarvam | Voice: {voice} | Model: {model} | Initialized")
+            return service
+        except Exception as e:
+            logger.exception(f"[TTS][FATAL] Sarvam TTS initialization failed: {e}")
+            raise RuntimeError(f"Sarvam TTS initialization failed: {e}") from e
+
     if provider == "elevenlabs":
         el_key = cfg.ELEVENLABS_API_KEY or cfg.TTS_API_KEY
         if not el_key:
@@ -23,7 +40,7 @@ def create_tts_service(cfg: Config) -> Any:
             else:
                 params["voice_id"] = cfg.ELEVENLABS_VOICE_ID
             service = ElevenLabsTTSService(api_key=el_key, **params)
-            logger.info(f"[TTS] Provider: elevenlabs | Voice ID: {cfg.ELEVENLABS_VOICE_ID} | Initialized")
+            logger.info(f"[TTS] Provider: elevenlabs | Voice ID: {cfg.ELEVENLABS_VOICE_ID} | Model: default | Initialized")
             return service
         except Exception as e:
             logger.exception(f"[TTS][FATAL] ElevenLabs TTS initialization failed: {e}")
@@ -36,7 +53,9 @@ def create_tts_service(cfg: Config) -> Any:
             raise RuntimeError("Groq TTS initialization failed: API key missing.")
         try:
             from pipecat.services.groq.tts import GroqTTSService
-            return GroqTTSService(api_key=groq_key)
+            service = GroqTTSService(api_key=groq_key)
+            logger.info("[TTS] Provider: groq | Initialized")
+            return service
         except Exception as e:
             logger.exception(f"[TTS][FATAL] Groq TTS initialization failed: {e}")
             raise RuntimeError(f"Groq TTS initialization failed: {e}") from e
