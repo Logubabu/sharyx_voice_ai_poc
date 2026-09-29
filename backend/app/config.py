@@ -9,9 +9,6 @@ load_dotenv()
 class Config:
     """Application configuration from environment variables."""
 
-    HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8000"))
-
     # Provider configurations
     STT_PROVIDER: str = os.getenv("STT_PROVIDER", "sarvam").lower()
     STT_API_KEY: str = os.getenv("STT_API_KEY", "") or os.getenv("SARVAM_API_KEY", "")
@@ -22,22 +19,18 @@ class Config:
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "") or os.getenv("GEMINI_API_KEY", "") or os.getenv("GROQ_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 
     TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
     TTS_API_KEY: str = os.getenv("TTS_API_KEY", "") or os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
-    # Daily / WebRTC configurations
-    DAILY_API_KEY: str = os.getenv("DAILY_API_KEY", "")
-    DAILY_ROOM_URL: str = os.getenv("DAILY_ROOM_URL", "")
-
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     ALLOWED_ORIGINS: List[str] = [
         origin.strip()
-        for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,*").split(",")
-        if origin.strip()
+        for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000").split(",")
+        if origin.strip() and origin.strip() != "*"
     ]
 
     SYSTEM_PROMPT: str = os.getenv(

@@ -3,10 +3,12 @@ import time
 from typing import Any, Dict, Optional
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     AudioRawFrame,
     Frame,
     InputAudioRawFrame,
+    LLMRunFrame,
     TextFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
@@ -16,7 +18,12 @@ from pipecat.frames.frames import (
 )
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from app.config import Config
@@ -146,40 +153,55 @@ class VoicePipelineManager:
             ]
         )
 
-        from pipecat.processors.aggregators.llm_response_universal import (
-            LLMUserAggregator,
-            LLMAssistantAggregator,
+        vad_analyzer = SileroVADAnalyzer(
+            params=VADParams(
+                confidence=0.6,
+                start_secs=0.2,
+                stop_secs=0.6,
+                min_volume=0.3,
+            )
         )
 
-        user_aggregator = LLMUserAggregator(context)
-        assistant_aggregator = LLMAssistantAggregator(context)
+        aggregators = LLMContextAggregatorPair(
+            context,
+            user_params=LLMUserAggregatorParams(vad_analyzer=vad_analyzer),
+        )
+
         audio_debug = AudioDebugProcessor()
         diagnostic_processor = DiagnosticEventProcessor(connection=connection)
 
         logger.info(f"[PIPELINE] Pipeline created")
 
-        # Correct Pipeline Order: transport.input() -> audio_debug -> stt -> user_aggregator -> llm -> assistant_aggregator -> diagnostic_processor -> tts -> transport.output()
+        # Pipeline order: transport.input(), audio_debug, stt, aggregators.user(), llm, diagnostic_processor, tts, transport.output(), aggregators.assistant()
         pipeline_elements = [
             transport.input(),
             audio_debug,
             stt,
-            user_aggregator,
+            aggregators.user(),
             llm,
-            assistant_aggregator,
             diagnostic_processor,
             tts,
             transport.output(),
+            aggregators.assistant(),
         ]
 
-        from pipecat.pipeline.task import PipelineTask
         pipeline = Pipeline(pipeline_elements)
-        task_runner = PipelineTask(pipeline)
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(
+                audio_in_sample_rate=16000,
+                audio_out_sample_rate=24000,
+                enable_metrics=True,
+            ),
+        )
         runner = PipelineRunner()
 
-        task = asyncio.create_task(runner.run(task_runner))
+        # Run pipeline task in background
+        runner_task = asyncio.create_task(runner.run(task))
 
         self.active_sessions[session_id] = {
             "task": task,
+            "runner_task": runner_task,
             "runner": runner,
             "pipeline": pipeline,
             "transport": transport,
@@ -189,6 +211,10 @@ class VoicePipelineManager:
         }
 
         logger.info(f"[PIPELINE] Pipeline started")
+
+        # Queue LLMRunFrame so bot speaks first on connect
+        await task.queue_frame(LLMRunFrame())
+
         return self.active_sessions[session_id]
 
     async def stop_session(self, session_id: str) -> bool:
@@ -200,13 +226,19 @@ class VoicePipelineManager:
 
         logger.info(f"[SESSION] Cleaning up voice pipeline session '{session_id}'")
         try:
-            task = session.get("task")
-            if task and not task.done():
-                task.cancel()
+            task: PipelineTask = session.get("task")
+            if task:
+                await task.cancel()
+                logger.info(f"[SESSION] PipelineTask for '{session_id}' cancelled cleanly.")
+
+            runner_task = session.get("runner_task")
+            if runner_task and not runner_task.done():
+                runner_task.cancel()
                 try:
-                    await task
+                    await runner_task
                 except asyncio.CancelledError:
-                    logger.info(f"[SESSION] Pipeline task for '{session_id}' cancelled cleanly.")
+                    pass
+
             logger.info(f"[SESSION] Session '{session_id}' stopped successfully.")
             return True
         except Exception as e:
