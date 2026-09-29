@@ -13,9 +13,26 @@ def create_llm_service(cfg: Config) -> Any:
     """
     provider = cfg.LLM_PROVIDER.lower()
     api_key = cfg.LLM_API_KEY or cfg.GROQ_API_KEY
-    model = cfg.LLM_MODEL or "openai/gpt-oss-20b"
+    model = cfg.LLM_MODEL if cfg.LLM_MODEL != "openai/gpt-oss-20b" else "llama-3.3-70b-versatile"
 
     logger.info(f"Initializing LLM service with provider: '{provider}', model: '{model}'")
+
+    if provider in ("google", "gemini"):
+        gemini_key = cfg.GEMINI_API_KEY or (cfg.LLM_API_KEY if cfg.LLM_PROVIDER in ("google", "gemini") else "")
+        if gemini_key:
+            try:
+                from pipecat.services.google.llm import GoogleLLMService
+                gemini_model = model if model and "llama" not in model else "gemini-2.0-flash"
+                params = {}
+                if hasattr(GoogleLLMService, "Settings"):
+                    params["settings"] = GoogleLLMService.Settings(model=gemini_model)
+                else:
+                    params["model"] = gemini_model
+                return GoogleLLMService(api_key=gemini_key, **params)
+            except Exception as e:
+                logger.warning(f"GoogleLLMService failed to initialize ({e}). Falling back to Groq LLM...")
+        else:
+            logger.warning("Gemini API key is not set. Falling back to Groq LLM...")
 
     if provider == "groq":
         try:

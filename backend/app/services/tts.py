@@ -31,11 +31,20 @@ def create_tts_service(cfg: Config) -> Any:
             logger.warning(f"Could not initialize OpenAITTSService: {e}")
 
     if provider == "elevenlabs":
-        try:
-            from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
-            return ElevenLabsTTSService(api_key=api_key)
-        except Exception as e:
-            logger.warning(f"Could not initialize ElevenLabsTTSService: {e}")
+        el_key = cfg.ELEVENLABS_API_KEY or (cfg.TTS_API_KEY if cfg.TTS_PROVIDER == "elevenlabs" else "")
+        if el_key:
+            try:
+                from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+                params = {}
+                if hasattr(ElevenLabsTTSService, "Settings"):
+                    params["settings"] = ElevenLabsTTSService.Settings(voice=cfg.ELEVENLABS_VOICE_ID)
+                else:
+                    params["voice_id"] = cfg.ELEVENLABS_VOICE_ID
+                return ElevenLabsTTSService(api_key=el_key, **params)
+            except Exception as e:
+                logger.warning(f"Could not initialize ElevenLabsTTSService ({e}). Falling back to Groq TTS...")
+        else:
+            logger.warning("ElevenLabs API key is not set. Falling back to Groq TTS...")
 
     if provider == "cartesia":
         try:

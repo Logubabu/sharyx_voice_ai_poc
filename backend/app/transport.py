@@ -27,10 +27,10 @@ def create_pipecat_transport(cfg: Config, room_url: str, token: Optional[str] = 
         # Configure Silero VAD for fast speech detection and silence/noise rejection
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
-                confidence=0.7,
+                confidence=0.5,
                 start_secs=0.2,
                 stop_secs=0.35,
-                min_volume=0.6,
+                min_volume=0.05,
             )
         )
 

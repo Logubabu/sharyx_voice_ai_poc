@@ -16,6 +16,22 @@ def create_stt_service(cfg: Config) -> Any:
 
     logger.info(f"Initializing STT service with provider: '{provider}'")
 
+    if provider == "sarvam":
+        sarvam_key = cfg.SARVAM_API_KEY or cfg.STT_API_KEY
+        if sarvam_key:
+            try:
+                from pipecat.services.sarvam.stt import SarvamSTTService
+                params = {}
+                if hasattr(SarvamSTTService, "Settings"):
+                    params["settings"] = SarvamSTTService.Settings(model=cfg.SARVAM_MODEL)
+                else:
+                    params["model"] = cfg.SARVAM_MODEL
+                return SarvamSTTService(api_key=sarvam_key, **params)
+            except Exception as e:
+                logger.warning(f"SarvamSTTService initialization failed ({e}). Trying fallback providers...")
+        else:
+            logger.warning("Sarvam API key is not set. Falling back to Groq STT...")
+
     if provider == "groq":
         try:
             from pipecat.services.groq.stt import GroqSTTService

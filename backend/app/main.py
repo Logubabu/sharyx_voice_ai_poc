@@ -115,11 +115,17 @@ async def webrtc_offer(req: OfferRequest):
         async def on_connection(conn):
             session_id = req.session_id or f"session_{uuid.uuid4().hex[:8]}"
             if session_id not in pipeline_manager.active_sessions:
-                from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
-                from pipecat.transports.base_transport import TransportParams
+                from pipecat.audio.vad.silero import SileroVADAnalyzer
+                from pipecat.audio.vad.vad_analyzer import VADParams
+                vad_analyzer = SileroVADAnalyzer(params=VADParams(confidence=0.7, start_secs=0.2, stop_secs=0.35, min_volume=0.6))
                 transport = SmallWebRTCTransport(
                     webrtc_connection=conn,
-                    params=TransportParams(audio_in_enabled=True, audio_out_enabled=True)
+                    params=TransportParams(
+                        audio_in_enabled=True,
+                        audio_out_enabled=True,
+                        audio_in_vad_enabled=True,
+                        vad_analyzer=vad_analyzer,
+                    )
                 )
                 await pipeline_manager.start_session(session_id, transport=transport)
 

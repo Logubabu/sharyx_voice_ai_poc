@@ -13,13 +13,13 @@ Pipecat WebRTC Transport (Python FastAPI)
 VAD / Turn Detection (Silero VAD)
        │
        ▼
-STT Service Adapter (OpenAI / Deepgram)
+STT Service Adapter (Sarvam AI / Groq / OpenAI / Deepgram)
        │
        ▼
-LLM Service Adapter (OpenAI GPT-4o-mini)
+LLM Service Adapter (Google Gemini / Groq / OpenAI)
        │
        ▼
-TTS Service Adapter (OpenAI / ElevenLabs / Cartesia)
+TTS Service Adapter (ElevenLabs / Groq / OpenAI / Cartesia)
        │
        ▼
 Pipecat WebRTC Transport
