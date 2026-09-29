@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CallStatus } from './components/CallStatus';
 import { CallControls } from './components/CallControls';
 import { Transcript } from './components/Transcript';
@@ -10,41 +10,45 @@ export function App() {
   const [callState, setCallState] = useState<CallState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [micActive, setMicActive] = useState<boolean>(false);
-  const [transcript] = useState<TranscriptItem[]>([
-    {
-      id: 'demo-1',
-      sender: 'user',
-      text: 'Hello, how are you?',
-      timestamp: '12:00 PM',
-    },
-    {
-      id: 'demo-2',
-      sender: 'ai',
-      text: "I'm doing well. How can I help?",
-      timestamp: '12:00 PM',
-    },
-  ]);
+  const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+
+  useEffect(() => {
+    // Subscribe to voice call state changes
+    voiceService.onStateUpdate = (newState: CallState) => {
+      setCallState(newState);
+      if (newState === 'listening' || newState === 'processing' || newState === 'speaking' || newState === 'connected') {
+        setMicActive(true);
+      } else if (newState === 'idle' || newState === 'disconnected' || newState === 'error') {
+        setMicActive(false);
+      }
+    };
+
+    // Subscribe to real-time conversation transcripts
+    voiceService.onTranscriptUpdate = (item: TranscriptItem) => {
+      setTranscript((prev) => {
+        // If updating an ongoing AI response stream, replace or append
+        const last = prev[prev.length - 1];
+        if (last && last.sender === item.sender && item.sender === 'ai') {
+          return [...prev.slice(0, -1), item];
+        }
+        return [...prev, item];
+      });
+    };
+  }, []);
 
   const handleStartCall = async () => {
     setErrorMessage(null);
+    setTranscript([]);
     setCallState('connecting');
 
     try {
       const { sessionId } = await voiceService.startCall();
-      setMicActive(true);
-      setCallState('connected');
-
-      // Simulate real-time interaction states for POC demonstration
-      setTimeout(() => {
-        setCallState('listening');
-      }, 1200);
-
-      console.log(`Call session started: ${sessionId}`);
+      console.log(`[APP] Call session started successfully: ${sessionId}`);
     } catch (err: any) {
-      console.error('Start call error:', err);
+      console.error('[APP] Start call error:', err);
       setCallState('error');
       setMicActive(false);
-      setErrorMessage(err.message || 'Unable to connect to the Voice AI service. Please try again.');
+      setErrorMessage(err.message || 'Unable to connect to the Voice AI service. Please check backend logs.');
     }
   };
 
@@ -53,13 +57,9 @@ export function App() {
     try {
       await voiceService.endCall();
     } catch (err) {
-      console.error('End call error:', err);
+      console.error('[APP] End call error:', err);
     } finally {
       setMicActive(false);
-      setCallState('disconnected');
-      setTimeout(() => {
-        setCallState('idle');
-      }, 800);
     }
   };
 
@@ -76,7 +76,7 @@ export function App() {
           Voice AI WebCall
         </h1>
         <p className="text-sm text-slate-400 mt-2">
-          Open-Source Real-Time Browser Voice Assistant
+          Real-Time Browser Voice Assistant powered by Sarvam STT, Gemini LLM & ElevenLabs TTS
         </p>
       </header>
 
