@@ -4,10 +4,13 @@ from typing import Any, Dict, Optional
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
+    AudioRawFrame,
     Frame,
+    InputAudioRawFrame,
     TextFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
 )
@@ -23,6 +26,22 @@ from app.services.tts import create_tts_service
 from app.utils.logging import logger
 
 
+class AudioDebugProcessor(FrameProcessor):
+    """Temporary audio debug processor that counts incoming audio frames from WebRTC and logs periodically."""
+
+    def __init__(self):
+        super().__init__()
+        self.frame_count = 0
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, InputAudioRawFrame):
+            self.frame_count += 1
+            if self.frame_count % 50 == 0 or self.frame_count == 1:
+                logger.info(f"[AUDIO-IN] received {self.frame_count} audio frames")
+        await self.push_frame(frame, direction)
+
+
 class DiagnosticEventProcessor(FrameProcessor):
     """Intercepts pipeline frames to produce structured diagnostic logs and real-time DataChannel events."""
 
@@ -30,24 +49,28 @@ class DiagnosticEventProcessor(FrameProcessor):
         super().__init__()
         self.connection = connection
         self.current_ai_response = ""
+        self.tts_frame_count = 0
 
     def _send_app_message(self, data: dict):
         if self.connection and hasattr(self.connection, "send_app_message"):
             try:
                 self.connection.send_app_message(data)
             except Exception as e:
-                logger.warning(f"[AUDIO] Failed to send app message over data channel: {e}")
+                logger.warning(f"[AUDIO] Notice sending app message over data channel: {e}")
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, UserStartedSpeakingFrame):
-            logger.info("[STT] Audio received [User started speaking]")
+            logger.info("[VAD] user started speaking")
             self._send_app_message({"type": "state", "state": "listening"})
 
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            logger.info("[VAD] user stopped speaking")
+
         elif isinstance(frame, TranscriptionFrame):
-            logger.info("[STT] Transcription started")
-            logger.info(f"[STT] User text: '{frame.text}'")
+            logger.info("[STT] Processing user audio")
+            logger.info(f"[STT] Transcript: {frame.text}")
             self._send_app_message({
                 "type": "transcript",
                 "sender": "user",
@@ -61,10 +84,10 @@ class DiagnosticEventProcessor(FrameProcessor):
             text_snippet = frame.text.strip()
             if text_snippet:
                 if not self.current_ai_response:
-                    logger.info(f"[LLM] Request: '{text_snippet}'")
+                    logger.info(f"[LLM] Input: {text_snippet}")
                     self._send_app_message({"type": "state", "state": "speaking"})
                 self.current_ai_response += frame.text
-                logger.info(f"[LLM] Response chunk: '{text_snippet}'")
+                logger.info(f"[LLM] Output: {text_snippet}")
                 self._send_app_message({
                     "type": "transcript",
                     "sender": "ai",
@@ -73,13 +96,18 @@ class DiagnosticEventProcessor(FrameProcessor):
                 })
 
         elif isinstance(frame, TTSStartedFrame):
-            logger.info("[TTS] Request received [TTS Started]")
-            logger.info("[TTS] Generating audio")
-            logger.info("[AUDIO] Sending audio to browser")
+            logger.info("[TTS] Started")
+            self.tts_frame_count = 0
             self._send_app_message({"type": "state", "state": "speaking"})
 
+        elif isinstance(frame, AudioRawFrame) and not isinstance(frame, InputAudioRawFrame):
+            self.tts_frame_count += 1
+            if self.tts_frame_count % 20 == 0 or self.tts_frame_count == 1:
+                logger.info(f"[TTS] audio frame received [frames: {self.tts_frame_count}]")
+                logger.info(f"[AUDIO-OUT] sending audio frame [frames: {self.tts_frame_count}]")
+
         elif isinstance(frame, TTSStoppedFrame):
-            logger.info("[TTS] Audio generated [TTS Finished]")
+            logger.info(f"[TTS] Audio generated [total frames: {self.tts_frame_count}]")
             self._send_app_message({"type": "state", "state": "listening"})
 
         await self.push_frame(frame, direction)
@@ -98,15 +126,20 @@ class VoicePipelineManager:
         transport: Any,
         connection: Any = None,
     ):
-        """Builds and starts the Pipecat real-time pipeline attached to a WebRTC transport."""
-        logger.info(f"[PIPELINE] Building voice pipeline for session '{session_id}'")
+        """Builds and starts the Pipecat real-time pipeline attached strictly to a WebRTC transport."""
+        if transport is None:
+            logger.error("[PIPELINE][FATAL] start_session called without a connected transport!")
+            raise ValueError("A connected SmallWebRTC transport is required")
 
-        # 1. Services initialization via configurable adapters
+        logger.info(f"[PIPELINE] Creating STT")
         stt = create_stt_service(self.cfg)
+
+        logger.info(f"[PIPELINE] Creating LLM")
         llm = create_llm_service(self.cfg)
+
+        logger.info(f"[PIPELINE] Creating TTS")
         tts = create_tts_service(self.cfg)
 
-        # 2. LLM Context with System Prompt
         context = LLMContext(
             messages=[
                 {"role": "system", "content": self.cfg.SYSTEM_PROMPT}
@@ -120,18 +153,22 @@ class VoicePipelineManager:
 
         user_aggregator = LLMUserAggregator(context)
         assistant_aggregator = LLMAssistantAggregator(context)
+        audio_debug = AudioDebugProcessor()
         diagnostic_processor = DiagnosticEventProcessor(connection=connection)
 
-        # 3. Pipeline Assembly: Transport Input -> STT -> User Aggregator -> LLM -> Diagnostic -> TTS -> Transport Output -> Assistant Aggregator
+        logger.info(f"[PIPELINE] Pipeline created")
+
+        # Correct Pipeline Order: transport.input() -> audio_debug -> stt -> user_aggregator -> llm -> assistant_aggregator -> diagnostic_processor -> tts -> transport.output()
         pipeline_elements = [
             transport.input(),
+            audio_debug,
             stt,
             user_aggregator,
             llm,
+            assistant_aggregator,
             diagnostic_processor,
             tts,
             transport.output(),
-            assistant_aggregator,
         ]
 
         from pipecat.pipeline.task import PipelineTask
@@ -139,7 +176,6 @@ class VoicePipelineManager:
         task_runner = PipelineTask(pipeline)
         runner = PipelineRunner()
 
-        # Run pipeline task in background
         task = asyncio.create_task(runner.run(task_runner))
 
         self.active_sessions[session_id] = {
@@ -148,10 +184,11 @@ class VoicePipelineManager:
             "pipeline": pipeline,
             "transport": transport,
             "connection": connection,
+            "session_id": session_id,
             "status": "connected",
         }
 
-        logger.info(f"[PIPELINE] Voice pipeline for session '{session_id}' successfully started.")
+        logger.info(f"[PIPELINE] Pipeline started")
         return self.active_sessions[session_id]
 
     async def stop_session(self, session_id: str) -> bool:
@@ -169,7 +206,7 @@ class VoicePipelineManager:
                 try:
                     await task
                 except asyncio.CancelledError:
-                    logger.info(f"[SESSION] Session task for '{session_id}' cancelled cleanly.")
+                    logger.info(f"[SESSION] Pipeline task for '{session_id}' cancelled cleanly.")
             logger.info(f"[SESSION] Session '{session_id}' stopped successfully.")
             return True
         except Exception as e:

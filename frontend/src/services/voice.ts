@@ -27,21 +27,22 @@ export class VoiceCallService {
   private sessionId: string | null = null;
   private mediaStream: MediaStream | null = null;
   private peerConnection: RTCPeerConnection | null = null;
-  private audioElement: HTMLAudioElement | null = null;
+  private remoteAudio: HTMLAudioElement | null = null;
 
   public onStateUpdate?: (state: CallState) => void;
   public onTranscriptUpdate?: (item: TranscriptItem) => void;
 
   constructor() {
-    // Persistent HTMLAudioElement for remote AI audio playback
     if (typeof window !== 'undefined') {
-      this.audioElement = new Audio();
-      this.audioElement.autoplay = true;
+      this.remoteAudio = new Audio();
+      this.remoteAudio.autoplay = true;
+      // @ts-ignore
+      this.remoteAudio.playsInline = true;
     }
   }
 
   /**
-   * Requests browser microphone permission and verifies live track status.
+   * Requests browser microphone permission and verifies track settings.
    */
   async requestMicrophone(): Promise<MediaStream> {
     console.log('[MIC] Requesting microphone');
@@ -51,17 +52,16 @@ export class VoiceCallService {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 16000,
         },
       });
       console.log('[MIC] Permission granted');
-      
+
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
-        console.log(`[MIC] Audio track created (enabled: ${audioTrack.enabled}, state: ${audioTrack.readyState})`);
+        console.log('[MIC] Track settings:', audioTrack.getSettings());
+        console.log(`[MIC] Track status - enabled: ${audioTrack.enabled}, readyState: ${audioTrack.readyState}`);
       }
-      
+
       this.mediaStream = stream;
       return stream;
     } catch (error) {
@@ -80,18 +80,30 @@ export class VoiceCallService {
     });
     this.peerConnection = pc;
 
-    // Track WebRTC connection states
+    // Log WebRTC State Changes
     pc.onconnectionstatechange = () => {
-      console.log(`[WEBRTC] Connection state: ${pc.connectionState}`);
+      console.log('[WEBRTC] connectionState:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         this.onStateUpdate?.('connected');
-        setTimeout(() => this.onStateUpdate?.('listening'), 800);
+        setTimeout(() => this.onStateUpdate?.('listening'), 500);
       } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
         this.onStateUpdate?.('disconnected');
       }
     };
 
-    // Attach local microphone audio track to peer connection
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WEBRTC] iceConnectionState:', pc.iceConnectionState);
+    };
+
+    pc.onicegatheringstatechange = () => {
+      console.log('[WEBRTC] iceGatheringState:', pc.iceGatheringState);
+    };
+
+    pc.onsignalingstatechange = () => {
+      console.log('[WEBRTC] signalingState:', pc.signalingState);
+    };
+
+    // 1. Add microphone tracks before creating offer
     if (this.mediaStream) {
       this.mediaStream.getAudioTracks().forEach((track) => {
         pc.addTrack(track, this.mediaStream!);
@@ -99,18 +111,22 @@ export class VoiceCallService {
       });
     }
 
-    // Persistent audio element handles incoming WebRTC audio track from AI assistant
-    pc.ontrack = (event) => {
-      console.log('[AUDIO] Remote audio track received from WebRTC');
-      if (this.audioElement) {
-        this.audioElement.srcObject = event.streams[0];
-        this.audioElement.play().catch((err) => {
-          console.error('[Audio] Playback failed (autoplay restriction may require interaction):', err);
-        });
+    // 2. Attach persistent HTMLAudioElement for incoming remote audio track
+    pc.ontrack = async (event) => {
+      console.log('[AUDIO] Remote track:', event.track.kind);
+      const stream = event.streams[0] || new MediaStream([event.track]);
+      if (this.remoteAudio) {
+        this.remoteAudio.srcObject = stream;
+        try {
+          await this.remoteAudio.play();
+          console.log('[AUDIO] Remote audio track active');
+        } catch (error) {
+          console.error('[AUDIO] Playback failed:', error);
+        }
       }
     };
 
-    // Create DataChannel for real-time transcript & state messages
+    // 3. Create DataChannel for transcript & state sync
     const dc = pc.createDataChannel('pipecat');
     this.setupDataChannel(dc);
 
@@ -118,13 +134,17 @@ export class VoiceCallService {
       this.setupDataChannel(event.channel);
     };
 
-    // Create WebRTC SDP offer
+    // 4. Create SDP offer
     console.log('[WEBRTC] Creating offer');
     const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
     console.log('[WEBRTC] Local description set');
+    await pc.setLocalDescription(offer);
 
-    console.log('[WEBRTC] Sending offer to backend');
+    const offerHasAudio = offer.sdp?.includes('m=audio') ?? false;
+    console.log(`[WEBRTC] Offer contains audio: ${offerHasAudio}`);
+
+    // 5. Send SDP offer to backend
+    console.log('[WEBRTC] Sending offer');
     const response = await fetch(`${BACKEND_URL}/api/webrtc/offer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -143,6 +163,10 @@ export class VoiceCallService {
 
     const answer = await response.json();
     console.log('[WEBRTC] Answer received');
+
+    const answerHasAudio = answer.sdp?.includes('m=audio') ?? false;
+    console.log(`[WEBRTC] Answer contains audio: ${answerHasAudio}`);
+
     await pc.setRemoteDescription(new RTCSessionDescription({
       type: answer.type,
       sdp: answer.sdp,
@@ -165,7 +189,7 @@ export class VoiceCallService {
           });
         }
       } catch (e) {
-        console.log('[DATACHANNEL] Received raw message:', event.data);
+        console.log('[DATACHANNEL] Raw message:', event.data);
       }
     };
   }
@@ -177,11 +201,11 @@ export class VoiceCallService {
     try {
       this.onStateUpdate?.('connecting');
 
-      // 1. Request microphone permission
+      // 1. Request microphone permission & get track
       await this.requestMicrophone();
 
       // 2. Obtain session ID from backend
-      console.log('[SESSION] Requesting new session ID from backend');
+      console.log('[SESSION] Requesting session ID from backend');
       const response = await fetch(`${BACKEND_URL}/api/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -195,10 +219,16 @@ export class VoiceCallService {
 
       const data = await response.json();
       this.sessionId = data.session_id;
-      console.log(`[SESSION] Initialized session '${this.sessionId}'`);
+      console.log(`[SESSION] Session ID: ${this.sessionId}`);
 
       // 3. Establish WebRTC connection and attach Pipecat pipeline
-      await this.connectWebRTC(this.sessionId!);
+      try {
+        await this.connectWebRTC(this.sessionId!);
+      } catch (error) {
+        console.error('[WEBRTC] Connection failed:', error);
+        await this.endCall();
+        throw error;
+      }
 
       return { sessionId: this.sessionId! };
     } catch (err: any) {

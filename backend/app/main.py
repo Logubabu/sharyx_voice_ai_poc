@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.config import config
 from app.pipeline import pipeline_manager
+from app.transport import create_webrtc_transport
 from app.utils.logging import logger
 
 app = FastAPI(
@@ -25,8 +26,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def warm_up_services():
-    """Pre-warms service adapters and logs provider status."""
-    logger.info("Pre-warming voice service pipeline adapters...")
+    """Pre-warms service adapters and logs provider configuration status."""
+    logger.info("==================================================")
+    logger.info("VOICE AI BACKEND STARTUP")
     sarvam_configured = bool(config.SARVAM_API_KEY or config.STT_API_KEY)
     gemini_configured = bool(config.GEMINI_API_KEY or config.LLM_API_KEY)
     elevenlabs_configured = bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY)
@@ -42,16 +44,14 @@ async def warm_up_services():
         create_stt_service(config)
         create_llm_service(config)
         create_tts_service(config)
-        logger.info("[CONFIG] Voice pipeline pre-warming complete. Backend ready for requests.")
+        logger.info("[CONFIG] Voice pipeline pre-warming complete. Backend ready for WebRTC connections.")
     except Exception as e:
         logger.warning(f"[CONFIG] Pre-warming notice: {e}")
+    logger.info("==================================================")
 
 
 from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler, SmallWebRTCRequest
-from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
-from pipecat.transports.base_transport import TransportParams
-from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 
 webrtc_request_handler = SmallWebRTCRequestHandler()
 
@@ -71,42 +71,53 @@ class OfferRequest(BaseModel):
     session_id: str | None = None
 
 
+@app.get("/")
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
 
 
+@app.get("/api/debug/providers")
 @app.get("/api/config/status")
 async def get_config_status():
     """Reports configuration status of required providers without revealing secrets."""
     return {
-        "sarvam": bool(config.SARVAM_API_KEY or config.STT_API_KEY),
-        "gemini": bool(config.GEMINI_API_KEY or config.LLM_API_KEY),
-        "elevenlabs": bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY),
-        "stt_provider": config.STT_PROVIDER,
-        "llm_provider": config.LLM_PROVIDER,
-        "tts_provider": config.TTS_PROVIDER,
+        "stt": {
+            "provider": config.STT_PROVIDER,
+            "configured": bool(config.SARVAM_API_KEY or config.STT_API_KEY),
+        },
+        "llm": {
+            "provider": config.LLM_PROVIDER,
+            "model": config.LLM_MODEL,
+            "configured": bool(config.GEMINI_API_KEY or config.LLM_API_KEY),
+        },
+        "tts": {
+            "provider": config.TTS_PROVIDER,
+            "configured": bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY),
+        },
     }
 
 
 @app.post("/api/start")
 async def start_call(req: StartCallRequest | None = None):
-    """Initializes a new Voice AI session ID without creating an unattached pipeline."""
+    """Initializes a new Voice AI logical session ID without starting an unattached pipeline."""
     session_id = (req and req.session_id) or f"session_{uuid.uuid4().hex[:8]}"
-    logger.info(f"[SESSION] Initializing session ID '{session_id}'")
+    logger.info(f"==================================================")
+    logger.info(f"VOICE AI SESSION")
+    logger.info(f"[SESSION] Created: {session_id}")
 
     return {
         "session_id": session_id,
-        "status": "initialized",
+        "status": "ready",
     }
 
 
 @app.post("/api/webrtc/offer")
 async def webrtc_offer(req: OfferRequest):
-    """Handles WebRTC SDP offer/answer negotiation and attaches the real-time Pipecat pipeline."""
+    """Handles WebRTC SDP offer/answer negotiation and creates the browser-connected Pipecat pipeline."""
     session_id = req.session_id or f"session_{uuid.uuid4().hex[:8]}"
-    logger.info(f"[WEBRTC] Received SDP offer for session '{session_id}'")
+    logger.info(f"[WEBRTC] SDP offer received")
 
     try:
         request = SmallWebRTCRequest(
@@ -115,33 +126,31 @@ async def webrtc_offer(req: OfferRequest):
             pc_id=req.pc_id,
         )
 
-        async def on_connection(conn):
-            logger.info(f"[WEBRTC] Connection established for peer: {conn.pc_id}")
-            vad_analyzer = SileroVADAnalyzer(
-                params=VADParams(
-                    confidence=0.5,
-                    start_secs=0.2,
-                    stop_secs=0.35,
-                    min_volume=0.05,
-                )
-            )
+        async def on_connection(connection: SmallWebRTCConnection):
+            logger.info(f"[WEBRTC] Browser connection created: {connection.pc_id}")
+            
+            # Setup WebRTC disconnection listener to stop pipeline and free resources
+            @connection.event_handler("closed")
+            async def handle_webrtc_closed(conn: SmallWebRTCConnection):
+                logger.info(f"[WEBRTC] Connection closed for pc_id: {conn.pc_id}. Stopping session '{session_id}'")
+                await pipeline_manager.stop_session(session_id)
 
-            transport = SmallWebRTCTransport(
-                webrtc_connection=conn,
-                params=TransportParams(
-                    audio_in_enabled=True,
-                    audio_out_enabled=True,
-                    audio_in_vad_enabled=True,
-                    vad_analyzer=vad_analyzer,
-                ),
-            )
-            logger.info(f"[WEBRTC] SmallWebRTC transport created for session '{session_id}'")
+            transport = create_webrtc_transport(connection=connection, cfg=config)
+            logger.info(f"[WEBRTC] Transport created")
 
             # Attach and start the Pipecat pipeline to this actual WebRTC connection
-            await pipeline_manager.start_session(session_id, transport=transport, connection=conn)
+            await pipeline_manager.start_session(
+                session_id=session_id,
+                transport=transport,
+                connection=connection,
+            )
+            logger.info(f"[WEBRTC] connected")
 
-        answer = await webrtc_request_handler.handle_web_request(request, on_connection)
-        logger.info(f"[WEBRTC] SDP answer generated and sent for session '{session_id}'")
+        answer = await webrtc_request_handler.handle_web_request(
+            request=request,
+            webrtc_connection_callback=on_connection,
+        )
+        logger.info(f"[WEBRTC] SDP answer returned to browser for session '{session_id}'")
         return answer
     except Exception as e:
         logger.exception(f"[WEBRTC][ERROR] SDP offer negotiation failed: {e}")

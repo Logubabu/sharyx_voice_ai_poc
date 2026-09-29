@@ -16,13 +16,13 @@ class Config:
     STT_PROVIDER: str = os.getenv("STT_PROVIDER", "sarvam").lower()
     STT_API_KEY: str = os.getenv("STT_API_KEY", "") or os.getenv("SARVAM_API_KEY", "")
     SARVAM_API_KEY: str = os.getenv("SARVAM_API_KEY", "")
-    SARVAM_MODEL: str = os.getenv("SARVAM_MODEL", "saaras:v1")
+    SARVAM_MODEL: str = os.getenv("SARVAM_MODEL", "saaras:v3")
 
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "google").lower()
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "") or os.getenv("GEMINI_API_KEY", "") or os.getenv("GROQ_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")
 
     TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
     TTS_API_KEY: str = os.getenv("TTS_API_KEY", "") or os.getenv("ELEVENLABS_API_KEY", "")
