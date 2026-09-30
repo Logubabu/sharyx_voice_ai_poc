@@ -52,6 +52,8 @@ export class VoiceCallService {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000,
         },
       });
       console.log('[MIC] Permission granted');
@@ -201,7 +203,16 @@ export class VoiceCallService {
     channel.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'state' && data.state) {
+        if (data.type === 'interruption') {
+          console.log('[WEBRTC] User barge-in interruption received');
+          if (this.remoteAudio) {
+            this.remoteAudio.pause();
+          }
+          this.onStateUpdate?.('listening');
+        } else if (data.type === 'state' && data.state) {
+          if (data.state === 'speaking' && this.remoteAudio && this.remoteAudio.paused) {
+            this.remoteAudio.play().catch(() => {});
+          }
           this.onStateUpdate?.(data.state as CallState);
         } else if (data.type === 'error') {
           console.error('[DATACHANNEL][ERROR]', data.message);

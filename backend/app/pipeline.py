@@ -70,7 +70,8 @@ class DiagnosticEventProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, UserStartedSpeakingFrame):
-            logger.info("[VAD] user started speaking")
+            logger.info("[VAD] user started speaking (barge-in interruption detected)")
+            self._send_app_message({"type": "interruption"})
             self._send_app_message({"type": "state", "state": "listening"})
 
         elif isinstance(frame, UserStoppedSpeakingFrame):
@@ -185,10 +186,10 @@ class VoicePipelineManager:
 
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
-                confidence=0.6,
-                start_secs=0.2,
-                stop_secs=0.6,
-                min_volume=0.3,
+                confidence=0.5,
+                start_secs=0.1,
+                stop_secs=0.25,
+                min_volume=0.15,
             )
         )
 

@@ -27,6 +27,7 @@ class Config:
     TTS_API_KEY: str = os.getenv("TTS_API_KEY", "") or os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+    ELEVENLABS_MODEL: str = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     ALLOWED_ORIGINS: List[str] = [
@@ -38,11 +39,11 @@ class Config:
     SYSTEM_PROMPT: str = os.getenv(
         "SYSTEM_PROMPT",
         (
-            "You are a helpful Voice AI assistant.\n\n"
-            "Keep your responses concise and conversational because your responses will be spoken aloud.\n\n"
-            "Do not produce unnecessary long explanations.\n\n"
-            "If the user interrupts you, stop your current response and listen to the user's new request.\n\n"
-            "Reply in plain spoken sentences. No markdown, bullet points, emojis or symbols."
+            "You are a fast, conversational Voice AI assistant.\n\n"
+            "Keep your responses extremely concise and spoken aloud in 1 to 2 short sentences max.\n\n"
+            "Do not produce preamble or long explanations.\n\n"
+            "If the user interrupts you, stop immediately and listen to the user.\n\n"
+            "Reply in plain spoken sentences only. No markdown, bullet points, emojis or special characters."
         ),
     )
 
