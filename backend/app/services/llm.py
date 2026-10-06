@@ -18,6 +18,8 @@ def create_llm_service(cfg: Config) -> Any:
             raise RuntimeError("Google Gemini LLM initialization failed: GEMINI_API_KEY is not configured.")
         try:
             from pipecat.services.google.llm import GoogleLLMService
+            from app.services.tools import tool_registry
+
             gemini_model = model if model and "llama" not in model else "gemini-3.5-flash-lite"
             params = {}
             if hasattr(GoogleLLMService, "Settings"):
@@ -25,7 +27,10 @@ def create_llm_service(cfg: Config) -> Any:
             else:
                 params["model"] = gemini_model
             service = GoogleLLMService(api_key=gemini_key, **params)
-            logger.info(f"[LLM] Provider: google | Model: {gemini_model} | Initialized")
+            
+            # Register Tool Registry function definitions & handlers on Gemini service
+            tool_registry.register_tools_on_llm(service)
+            logger.info(f"[LLM] Provider: google | Model: {gemini_model} | Tools: {len(tool_registry.get_tool_definitions())} Registered")
             return service
         except Exception as e:
             logger.exception(f"[LLM][FATAL] Google LLM initialization failed: {e}")

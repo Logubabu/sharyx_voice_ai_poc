@@ -34,17 +34,12 @@ def create_tts_service(cfg: Config) -> Any:
             raise RuntimeError("ElevenLabs TTS initialization failed: ELEVENLABS_API_KEY is not configured.")
         try:
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
-            params = {}
             model = getattr(cfg, "ELEVENLABS_MODEL", "eleven_flash_v2_5")
-            if hasattr(ElevenLabsTTSService, "Settings"):
-                params["settings"] = ElevenLabsTTSService.Settings(
-                    voice=cfg.ELEVENLABS_VOICE_ID,
-                    model=model,
-                )
-            else:
-                params["voice_id"] = cfg.ELEVENLABS_VOICE_ID
-                params["model"] = model
-            service = ElevenLabsTTSService(api_key=el_key, **params)
+            service = ElevenLabsTTSService(
+                api_key=el_key,
+                voice_id=cfg.ELEVENLABS_VOICE_ID,
+                model=model,
+            )
             logger.info(f"[TTS] Provider: elevenlabs | Voice ID: {cfg.ELEVENLABS_VOICE_ID} | Model: {model} | Initialized")
             return service
         except Exception as e:

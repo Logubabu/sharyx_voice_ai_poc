@@ -32,6 +32,7 @@ from app.config import Config
 from app.services.stt import create_stt_service
 from app.services.llm import create_llm_service
 from app.services.tts import create_tts_service
+from app.services.audio_processor import NoiseCancellationFrameProcessor, audio_processor_factory
 from app.utils.logging import logger
 
 
@@ -187,9 +188,9 @@ class VoicePipelineManager:
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
                 confidence=0.5,
-                start_secs=0.1,
-                stop_secs=0.25,
-                min_volume=0.15,
+                start_secs=0.08,
+                stop_secs=0.18,
+                min_volume=0.10,
             )
         )
 
@@ -199,15 +200,17 @@ class VoicePipelineManager:
         )
 
         audio_debug = AudioDebugProcessor()
+        noise_cancellation_processor = NoiseCancellationFrameProcessor(connection=connection)
         diagnostic_processor = DiagnosticEventProcessor(connection=connection)
         tts_monitor = TTSMonitor(connection=connection)
 
-        logger.info(f"[PIPELINE] Pipeline created")
+        logger.info(f"[PIPELINE] Pipeline created with NoiseCancellationFrameProcessor")
 
-        # Pipeline order: transport.input(), audio_debug, stt, aggregators.user(), llm, diagnostic_processor, tts, TTSMonitor, transport.output(), aggregators.assistant()
+        # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, diagnostic_processor, tts, TTSMonitor, transport.output(), aggregators.assistant()
         pipeline_elements = [
             transport.input(),
             audio_debug,
+            noise_cancellation_processor,
             stt,
             aggregators.user(),
             llm,

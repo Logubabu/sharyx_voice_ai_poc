@@ -16,9 +16,32 @@ export type CallState =
 
 export interface TranscriptItem {
   id: string;
-  sender: 'user' | 'ai';
+  sender: 'user' | 'ai' | 'tool';
   text: string;
   timestamp: string;
+  toolName?: string;
+  toolArgs?: any;
+  toolResult?: any;
+}
+
+export interface NoiseCancellationInfo {
+  active_filter: string;
+  filter_type: string;
+  description: string;
+  stats?: {
+    frames_processed: number;
+    last_rms: number;
+    last_db: number;
+  };
+}
+
+export interface FreeSwitchStatus {
+  esl_connected: boolean;
+  host: string;
+  port: number;
+  active_channels_count: number;
+  currently_running_noise_cancellation: string;
+  recent_commands: Array<{ timestamp: string; command: string; response: string; status: string }>;
 }
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -31,6 +54,7 @@ export class VoiceCallService {
 
   public onStateUpdate?: (state: CallState) => void;
   public onTranscriptUpdate?: (item: TranscriptItem) => void;
+  public onNoiseCancellationUpdate?: (info: NoiseCancellationInfo) => void;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -54,6 +78,8 @@ export class VoiceCallService {
           autoGainControl: true,
           channelCount: 1,
           sampleRate: 16000,
+          // @ts-ignore
+          latency: 0.0,
         },
       });
       console.log('[MIC] Permission granted');
@@ -126,9 +152,14 @@ export class VoiceCallService {
         this.remoteAudio.srcObject = stream;
         try {
           await this.remoteAudio.play();
-          console.log('[AUDIO] Remote audio track active');
+          console.log('[AUDIO] Remote audio track active and playing successfully');
         } catch (error) {
-          console.error('[AUDIO] Playback failed:', error);
+          console.warn('[AUDIO] Autoplay prevented, unlocking on document click:', error);
+          window.addEventListener('click', () => {
+            if (this.remoteAudio) {
+              this.remoteAudio.play().catch(() => {});
+            }
+          }, { once: true });
         }
       }
 
@@ -224,6 +255,25 @@ export class VoiceCallService {
             text: data.text,
             timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
+        } else if (data.type === 'noise_cancellation') {
+          console.log('[WEBRTC] Running Noise Cancellation update:', data.active_filter);
+          this.onNoiseCancellationUpdate?.({
+            active_filter: data.active_filter,
+            filter_type: data.filter_type || 'passthrough',
+            description: data.description || '',
+            stats: data.stats,
+          });
+        } else if (data.type === 'tool_call') {
+          console.log('[WEBRTC] Tool Call Executed:', data.tool_name, data.args);
+          this.onTranscriptUpdate?.({
+            id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            sender: 'tool',
+            text: `Tool Call Executed: ${data.tool_name}(${JSON.stringify(data.args)})`,
+            toolName: data.tool_name,
+            toolArgs: data.args,
+            toolResult: data.result,
+            timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          });
         }
       } catch (e) {
         console.log('[DATACHANNEL] Raw message:', event.data);
@@ -237,6 +287,16 @@ export class VoiceCallService {
   async startCall(): Promise<{ sessionId: string }> {
     try {
       this.onStateUpdate?.('connecting');
+
+      // 0. Pre-unlock HTMLAudioElement playback permissions inside user click gesture
+      if (typeof window !== 'undefined' && this.remoteAudio) {
+        if (!document.body.contains(this.remoteAudio)) {
+          document.body.appendChild(this.remoteAudio);
+        }
+        this.remoteAudio.muted = false;
+        this.remoteAudio.volume = 1.0;
+        this.remoteAudio.play().catch(() => {});
+      }
 
       // 1. Request microphone permission & get track
       await this.requestMicrophone();
@@ -315,6 +375,62 @@ export class VoiceCallService {
 
   getSessionId(): string | null {
     return this.sessionId;
+  }
+
+  /**
+   * Fetches currently running noise cancellation status from backend.
+   */
+  async getNoiseCancellationStatus(): Promise<NoiseCancellationInfo> {
+    const res = await fetch(`${BACKEND_URL}/api/noise-cancellation/status`);
+    if (!res.ok) throw new Error('Failed to get noise cancellation status');
+    const data = await res.json();
+    return {
+      active_filter: data.current_running_filter,
+      filter_type: data.filter_type,
+      description: data.description,
+      stats: data.stats,
+    };
+  }
+
+  /**
+   * Dynamically sets the active running noise cancellation filter.
+   */
+  async selectNoiseCancellation(filterName: string): Promise<NoiseCancellationInfo> {
+    const res = await fetch(`${BACKEND_URL}/api/noise-cancellation/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter_name: filterName }),
+    });
+    if (!res.ok) throw new Error('Failed to select noise cancellation');
+    const data = await res.json();
+    return {
+      active_filter: data.current_running_filter,
+      filter_type: data.details.filter_type,
+      description: data.details.description,
+      stats: data.details.stats,
+    };
+  }
+
+  /**
+   * Fetches FreeSWITCH ESL connection and channel status.
+   */
+  async getFreeSwitchStatus(): Promise<FreeSwitchStatus> {
+    const res = await fetch(`${BACKEND_URL}/api/freeswitch/esl/status`);
+    if (!res.ok) throw new Error('Failed to fetch FreeSWITCH status');
+    return await res.json();
+  }
+
+  /**
+   * Executes a FreeSWITCH ESL command or ToolCall.
+   */
+  async executeFreeSwitchESL(command: string, args: string = ''): Promise<any> {
+    const res = await fetch(`${BACKEND_URL}/api/freeswitch/esl/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, args }),
+    });
+    if (!res.ok) throw new Error('Failed to execute FreeSWITCH ESL command');
+    return await res.json();
   }
 }
 

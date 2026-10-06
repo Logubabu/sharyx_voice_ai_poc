@@ -6,7 +6,13 @@ from pydantic import BaseModel
 from app.config import config
 from app.pipeline import pipeline_manager
 from app.transport import create_webrtc_transport
+from app.services.audio_processor import audio_processor_factory
+from app.services.freeswitch_esl import freeswitch_esl_service
 from app.utils.logging import logger
+from app.utils.patches import apply_aioice_patches, setup_asyncio_exception_handler
+
+# Apply socket teardown patches immediately on module load
+apply_aioice_patches()
 
 app = FastAPI(
     title="Voice AI WebCall POC",
@@ -27,6 +33,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def warm_up_services():
     """Pre-warms service adapters and logs provider configuration status."""
+    setup_asyncio_exception_handler()
     logger.info("==================================================")
     logger.info("VOICE AI BACKEND STARTUP")
     sarvam_configured = bool(config.SARVAM_API_KEY or config.STT_API_KEY)
@@ -71,6 +78,15 @@ class OfferRequest(BaseModel):
     session_id: str | None = None
 
 
+class NoiseCancellationRequest(BaseModel):
+    filter_name: str
+
+
+class ESLExecuteRequest(BaseModel):
+    command: str
+    args: str = ""
+
+
 @app.get("/")
 @app.get("/health")
 async def health_check():
@@ -97,6 +113,36 @@ async def get_config_status():
             "configured": bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY),
         },
     }
+
+
+@app.get("/api/noise-cancellation/status")
+async def get_noise_cancellation_status():
+    """Gets currently running noise cancellation filter and audio loop metrics."""
+    return audio_processor_factory.get_active_filter_status()
+
+
+@app.post("/api/noise-cancellation/select")
+async def select_noise_cancellation(req: NoiseCancellationRequest):
+    """Dynamically switches active noise cancellation filter."""
+    active_filter = audio_processor_factory.set_active_filter(req.filter_name)
+    freeswitch_esl_service.execute_esl_command("noise_cancel", active_filter.display_name)
+    return {
+        "status": "success",
+        "current_running_filter": active_filter.display_name,
+        "details": audio_processor_factory.get_active_filter_status(),
+    }
+
+
+@app.get("/api/freeswitch/esl/status")
+async def get_freeswitch_status():
+    """Gets FreeSWITCH ESL connection status and active channels."""
+    return freeswitch_esl_service.get_status()
+
+
+@app.post("/api/freeswitch/esl/execute")
+async def execute_freeswitch_esl(req: ESLExecuteRequest):
+    """Executes a FreeSWITCH ESL command."""
+    return freeswitch_esl_service.execute_esl_command(req.command, req.args)
 
 
 @app.post("/api/start")
@@ -181,4 +227,4 @@ async def get_session_status(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port="8000", reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

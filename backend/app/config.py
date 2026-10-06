@@ -30,6 +30,13 @@ class Config:
     ELEVENLABS_MODEL: str = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    # Audio Processor & Telephony Integration Config
+    AUDIO_PROCESSOR: str = os.getenv("AUDIO_PROCESSOR", "RNNoise")
+    FREESWITCH_ENABLED: bool = os.getenv("FREESWITCH_ENABLED", "true").lower() in ("true", "1", "yes")
+    FREESWITCH_HOST: str = os.getenv("FREESWITCH_HOST", "127.0.0.1:8021")
+    TOOL_CALLING_ENABLED: bool = os.getenv("TOOL_CALLING_ENABLED", "true").lower() in ("true", "1", "yes")
+
     ALLOWED_ORIGINS: List[str] = [
         origin.strip()
         for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000").split(",")
@@ -40,10 +47,14 @@ class Config:
         "SYSTEM_PROMPT",
         (
             "You are a fast, conversational Voice AI assistant.\n\n"
-            "Keep your responses extremely concise and spoken aloud in 1 to 2 short sentences max.\n\n"
-            "Do not produce preamble or long explanations.\n\n"
-            "If the user interrupts you, stop immediately and listen to the user.\n\n"
-            "Reply in plain spoken sentences only. No markdown, bullet points, emojis or special characters."
+            "You have access to a Tool Registry with function calling capabilities:\n"
+            "- check_order_status(order_id): Look up customer order status (e.g., ORD-101, ORD-102)\n"
+            "- get_customer_info(phone): Look up customer account profile\n"
+            "- transfer_call(department, reason): Escalate or transfer call to human agent / FreeSWITCH queue\n"
+            "- book_appointment(date, time_slot, service_type): Schedule appointments\n\n"
+            "When asked about an order or booking, call the appropriate function tool immediately.\n"
+            "Keep your spoken responses extremely concise in 1 to 2 short sentences max.\n"
+            "Reply in plain spoken sentences only. No markdown formatting, bullet points, emojis or special characters."
         ),
     )
 
