@@ -112,7 +112,40 @@ async def get_config_status():
             "provider": config.TTS_PROVIDER,
             "configured": bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY),
         },
+        "search": {
+            "enabled": config.WEB_SEARCH_ENABLED,
+            "searxng_url": config.SEARXNG_URL,
+            "max_results": config.WEB_SEARCH_MAX_RESULTS,
+            "search_timeout": config.WEB_SEARCH_TIMEOUT,
+            "fetch_timeout": config.WEB_FETCH_TIMEOUT,
+        },
     }
+
+
+@app.get("/api/search/metrics")
+async def get_search_metrics():
+    """Returns web search and web fetch timing/success metrics."""
+    from app.services.search import tool_metrics
+    return tool_metrics.get_summary()
+
+
+@app.get("/api/audit/logs")
+async def get_audit_logs(limit: int = 50, category: str | None = None):
+    """Retrieves recent audit log events."""
+    from app.utils.audit import audit_logger
+    return {
+        "logs": audit_logger.get_recent_logs(limit=limit, category=category),
+        "count": len(audit_logger.get_recent_logs(limit=limit, category=category)),
+    }
+
+
+@app.get("/api/audit/summary")
+async def get_audit_summary():
+    """Retrieves high-level statistical summary of recorded audit events."""
+    from app.utils.audit import audit_logger
+    return audit_logger.get_summary()
+
+
 
 
 @app.get("/api/noise-cancellation/status")

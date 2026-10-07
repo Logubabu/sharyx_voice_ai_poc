@@ -1,10 +1,10 @@
 import json
+import time
 from typing import Any, Dict, Callable
 from app.utils.logging import logger
+from app.utils.audit import audit_logger
 from app.services.audio_processor import audio_processor_factory
 from app.services.freeswitch_esl import freeswitch_esl_service
-
-import time
 
 # In-memory mock database for tool call demonstrations
 MOCK_DATABASE = {
@@ -24,7 +24,8 @@ TOOL_CALL_HISTORY = []
 
 
 def broadcast_tool_call(tool_name: str, args: dict, result: dict):
-    """Broadcasts tool call execution event over active DataChannels and logs to history."""
+    """Broadcasts tool call execution event over active DataChannels and logs to audit history."""
+
     try:
         from app.pipeline import pipeline_manager
         timestamp = time.strftime("%I:%M %p")
@@ -39,6 +40,17 @@ def broadcast_tool_call(tool_name: str, args: dict, result: dict):
         if len(TOOL_CALL_HISTORY) > 50:
             TOOL_CALL_HISTORY.pop(0)
 
+        # Audit Log
+        is_success = bool(result.get("success", True)) if isinstance(result, dict) else True
+        audit_logger.log_event(
+            event="TOOL_EXECUTION",
+            category="tool_calling",
+            actor="llm",
+            action=tool_name,
+            details={"args": args, "result": result},
+            status="SUCCESS" if is_success else "FAILED",
+        )
+
         for session_id, session in list(pipeline_manager.active_sessions.items()):
             conn = session.get("connection")
             if conn and hasattr(conn, "send_app_message"):
@@ -49,6 +61,7 @@ def broadcast_tool_call(tool_name: str, args: dict, result: dict):
                     logger.warning(f"[TOOL-REGISTRY] Notice broadcasting tool_call: {e}")
     except Exception as e:
         logger.warning(f"[TOOL-REGISTRY] Notice in broadcast_tool_call: {e}")
+
 
 
 # --- Tool Handlers ---
@@ -264,7 +277,7 @@ class VoiceToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "date": {"type": "string", "description": "Date of appointment (e.g. 2026-10-10)"},
+                            "date": {"type": "string", "description": "Date of appointment (YYYY-MM-DD)"},
                             "time_slot": {"type": "string", "description": "Time slot (e.g. 10:00 AM)"},
                             "service_type": {"type": "string", "description": "Service or consultation type"}
                         },
@@ -331,15 +344,83 @@ class VoiceToolRegistry:
             "handler": handle_get_audio_processor_status
         }
 
+        # Conditionally register web search and fetch tools based on feature flag
+        from app.config import config
+        if getattr(config, "WEB_SEARCH_ENABLED", True):
+            from app.services.search.tools import (
+                handle_web_search,
+                handle_web_fetch,
+                WEB_SEARCH_SCHEMA,
+                WEB_FETCH_SCHEMA,
+            )
+            logger.info("[TOOL-REGISTRY] Feature WEB_SEARCH_ENABLED is True. Registering web_search and web_fetch tools.")
+            self.tools["web_search"] = {
+                "schema": WEB_SEARCH_SCHEMA,
+                "definition": {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": WEB_SEARCH_SCHEMA.description,
+                        "parameters": {
+                            "type": "object",
+                            "properties": WEB_SEARCH_SCHEMA.properties,
+                            "required": WEB_SEARCH_SCHEMA.required,
+                        },
+                    },
+                },
+                "handler": handle_web_search,
+            }
+            self.tools["web_fetch"] = {
+                "schema": WEB_FETCH_SCHEMA,
+                "definition": {
+                    "type": "function",
+                    "function": {
+                        "name": "web_fetch",
+                        "description": WEB_FETCH_SCHEMA.description,
+                        "parameters": {
+                            "type": "object",
+                            "properties": WEB_FETCH_SCHEMA.properties,
+                            "required": WEB_FETCH_SCHEMA.required,
+                        },
+                    },
+                },
+                "handler": handle_web_fetch,
+            }
+        else:
+            logger.info("[TOOL-REGISTRY] Feature WEB_SEARCH_ENABLED is False. web_search and web_fetch tools will NOT be registered.")
+
     def get_tool_definitions(self):
         """Returns JSON schema definitions for LLM registration."""
         return [tool["definition"] for tool in self.tools.values()]
+
+    def get_function_schemas(self):
+        """Returns list of Pipecat FunctionSchema objects for LLMContext initialization."""
+        from pipecat.adapters.schemas.function_schema import FunctionSchema
+        schemas = []
+        for name, tool in self.tools.items():
+            if "schema" in tool:
+                schemas.append(tool["schema"])
+            else:
+                fn_def = tool["definition"]["function"]
+                schemas.append(
+                    FunctionSchema(
+                        name=fn_def["name"],
+                        description=fn_def["description"],
+                        properties=fn_def["parameters"].get("properties", {}),
+                        required=fn_def["parameters"].get("required", []),
+                        handler=tool.get("handler"),
+                    )
+                )
+        return schemas
+
 
     def register_tools_on_llm(self, llm_service: Any):
         """Registers all tool handlers directly on the LLM service instance."""
         for name, tool in self.tools.items():
             if hasattr(llm_service, "register_function"):
                 logger.info(f"[TOOL-REGISTRY] Registering function tool '{name}' on LLM service.")
-                llm_service.register_function(name, tool["handler"])
+                llm_service.register_function(name, tool["handler"], cancel_on_interruption=True)
+
 
 tool_registry = VoiceToolRegistry()
+

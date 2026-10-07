@@ -1,6 +1,17 @@
-version: '3.12'
+version: '3.8'
 
 services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -9,6 +20,10 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+    depends_on:
+      - searxng
     restart: unless-stopped
 
   frontend:
@@ -22,4 +37,3 @@ services:
       - backend
     environment:
       - VITE_BACKEND_URL=http://localhost:8000
-

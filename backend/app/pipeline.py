@@ -32,8 +32,12 @@ from app.config import Config
 from app.services.stt import create_stt_service
 from app.services.llm import create_llm_service
 from app.services.tts import create_tts_service
+from app.services.tools import tool_registry
 from app.services.audio_processor import NoiseCancellationFrameProcessor, audio_processor_factory
 from app.utils.logging import logger
+from app.utils.audit import audit_logger
+
+
 
 
 class AudioDebugProcessor(FrameProcessor):
@@ -81,6 +85,14 @@ class DiagnosticEventProcessor(FrameProcessor):
         elif isinstance(frame, TranscriptionFrame):
             logger.info("[STT] Processing user audio")
             logger.info(f"[STT] Transcript: {frame.text}")
+            audit_logger.log_event(
+                event="USER_TRANSCRIPTION",
+                category="speech",
+                actor="user",
+                action="stt_transcription",
+                details={"text": frame.text},
+                status="SUCCESS",
+            )
             self._send_app_message({
                 "type": "transcript",
                 "sender": "user",
@@ -98,12 +110,21 @@ class DiagnosticEventProcessor(FrameProcessor):
                     self._send_app_message({"type": "state", "state": "speaking"})
                 self.current_ai_response += frame.text
                 logger.info(f"[LLM] Output: {text_snippet}")
+                audit_logger.log_event(
+                    event="AI_RESPONSE_GENERATED",
+                    category="speech",
+                    actor="ai",
+                    action="llm_response",
+                    details={"text": text_snippet},
+                    status="SUCCESS",
+                )
                 self._send_app_message({
                     "type": "transcript",
                     "sender": "ai",
                     "text": self.current_ai_response,
                     "timestamp": time.strftime("%I:%M %p"),
                 })
+
 
         elif isinstance(frame, ErrorFrame):
             processor = getattr(frame, "processor", "pipeline")
@@ -179,11 +200,18 @@ class VoicePipelineManager:
         logger.info(f"[PIPELINE] Creating TTS")
         tts = create_tts_service(self.cfg)
 
+        tools = tool_registry.get_function_schemas() if self.cfg.TOOL_CALLING_ENABLED else []
+        current_date_info = time.strftime("%A, %B %d, %Y (%I:%M %p)")
+        system_content = f"Today's Date and Time: {current_date_info}\n\n{self.cfg.SYSTEM_PROMPT}"
+
         context = LLMContext(
             messages=[
-                {"role": "system", "content": self.cfg.SYSTEM_PROMPT}
-            ]
+                {"role": "system", "content": system_content}
+            ],
+            tools=tools,
         )
+
+
 
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
@@ -248,6 +276,16 @@ class VoicePipelineManager:
 
         logger.info(f"[PIPELINE] Pipeline started")
 
+        audit_logger.log_event(
+            event="SESSION_STARTED",
+            category="session",
+            session_id=session_id,
+            actor="client",
+            action="start_pipeline",
+            details={"status": "connected"},
+            status="SUCCESS",
+        )
+
         # Add initial greeting prompt so context is valid for Gemini (has non-system message)
         context.add_message({"role": "user", "content": "Greet the user in one short sentence."})
 
@@ -264,6 +302,16 @@ class VoicePipelineManager:
             return False
 
         logger.info(f"[SESSION] Cleaning up voice pipeline session '{session_id}'")
+        audit_logger.log_event(
+            event="SESSION_STOPPED",
+            category="session",
+            session_id=session_id,
+            actor="client",
+            action="stop_pipeline",
+            details={"status": "disconnected"},
+            status="SUCCESS",
+        )
+
         try:
             task: PipelineTask = session.get("task")
             if task:
