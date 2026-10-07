@@ -432,6 +432,22 @@ export class VoiceCallService {
     if (!res.ok) throw new Error('Failed to execute FreeSWITCH ESL command');
     return await res.json();
   }
+
+  /**
+   * Triggers FreeSWITCH to initiate an outbound call to a target phone number.
+   */
+  async makeOutboundCall(phoneNumber: string, gateway: string = 'default'): Promise<any> {
+    const res = await fetch(`${BACKEND_URL}/api/telephony/outbound-call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone_number: phoneNumber, gateway }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Outbound call request failed (${res.status}): ${errText}`);
+    }
+    return await res.json();
+  }
 }
 
 export const voiceService = new VoiceCallService();

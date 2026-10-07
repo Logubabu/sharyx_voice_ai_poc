@@ -87,6 +87,11 @@ class ESLExecuteRequest(BaseModel):
     args: str = ""
 
 
+class OutboundCallRequest(BaseModel):
+    phone_number: str
+    gateway: str = "default"
+
+
 @app.get("/")
 @app.get("/health")
 async def health_check():
@@ -143,6 +148,19 @@ async def get_freeswitch_status():
 async def execute_freeswitch_esl(req: ESLExecuteRequest):
     """Executes a FreeSWITCH ESL command."""
     return freeswitch_esl_service.execute_esl_command(req.command, req.args)
+
+
+@app.post("/api/telephony/outbound-call")
+async def make_outbound_phone_call(req: OutboundCallRequest):
+    """Initiates an outbound web/telephony call to a phone number via FreeSWITCH SIP gateway."""
+    logger.info(f"[OUTBOUND-CALL] Dialing phone number '{req.phone_number}' via gateway '{req.gateway}'")
+    res = freeswitch_esl_service.execute_esl_command("originate", f"sofia/gateway/{req.gateway}/{req.phone_number} &socket(127.0.0.1:8086 async)")
+    return {
+        "status": "initiated",
+        "phone_number": req.phone_number,
+        "gateway": req.gateway,
+        "freeswitch_result": res,
+    }
 
 
 from fastapi import WebSocket

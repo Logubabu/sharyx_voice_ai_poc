@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Phone, Globe, Server, CheckCircle2 } from 'lucide-react';
 
 export type VoiceMode = 'webrtc' | 'freeswitch';

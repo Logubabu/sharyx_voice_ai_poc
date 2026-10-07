@@ -4,6 +4,7 @@ import { CallControls } from './components/CallControls';
 import { Transcript } from './components/Transcript';
 import { NoiseCancellationPanel } from './components/NoiseCancellationPanel';
 import { TransportSelector, type VoiceMode } from './components/TransportSelector';
+import { OutboundDialer } from './components/OutboundDialer';
 import { voiceService, type CallState, type TranscriptItem } from './services/voice';
 import { Radio } from 'lucide-react';
 import './styles/App.css';
@@ -87,13 +88,17 @@ export function App() {
 
         <TransportSelector mode={voiceMode} onModeChange={setVoiceMode} />
 
-        <div className="mt-6">
-          <CallControls
-            state={callState}
-            onStartCall={handleStartCall}
-            onEndCall={handleEndCall}
-          />
-        </div>
+        {voiceMode === 'freeswitch' ? (
+          <OutboundDialer />
+        ) : (
+          <div className="mt-6">
+            <CallControls
+              state={callState}
+              onStartCall={handleStartCall}
+              onEndCall={handleEndCall}
+            />
+          </div>
+        )}
 
         <Transcript items={transcript} />
 
