@@ -1,5 +1,5 @@
 import uuid
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -8,6 +8,7 @@ from app.pipeline import pipeline_manager
 from app.transport import create_webrtc_transport
 from app.services.audio_processor import audio_processor_factory
 from app.services.freeswitch_esl import freeswitch_esl_service
+from app.telephony.twilio_service import twilio_service
 from app.utils.logging import logger
 from app.utils.patches import apply_aioice_patches, setup_asyncio_exception_handler
 
@@ -92,6 +93,12 @@ class OutboundCallRequest(BaseModel):
     gateway: str = "default"
 
 
+class TwilioCallRequest(BaseModel):
+    phone_number: str
+    from_number: str | None = None
+    twiml_url: str | None = None
+
+
 @app.get("/")
 @app.get("/health")
 async def health_check():
@@ -116,6 +123,10 @@ async def get_config_status():
         "tts": {
             "provider": config.TTS_PROVIDER,
             "configured": bool(config.ELEVENLABS_API_KEY or config.TTS_API_KEY),
+        },
+        "twilio": {
+            "configured": bool(config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN),
+            "from_number": config.TWILIO_FROM_NUMBER,
         },
     }
 
@@ -150,26 +161,93 @@ async def execute_freeswitch_esl(req: ESLExecuteRequest):
     return freeswitch_esl_service.execute_esl_command(req.command, req.args)
 
 
+from fastapi import Request
+from app.telephony.twilio import validate_twilio_request
+from app.telephony.provider import get_telephony_provider
+
+
+@app.api_route("/api/twilio/voice", methods=["GET", "POST", "HEAD"])
+@app.api_route("/api/telephony/twilio/voice", methods=["GET", "POST", "HEAD"])
+@app.api_route("/api/telephony/twilio/twiml", methods=["GET", "POST", "HEAD"])
+async def get_twilio_voice_twiml(request: Request):
+    """Twilio Inbound Call Webhook. Returns TwiML XML payload to connect call audio to Pipecat WebSocket stream."""
+    url = str(request.url)
+    form_params = {}
+    if request.method == "POST":
+        try:
+            form_data = await request.form()
+            form_params = {k: str(v) for k, v in form_data.items()}
+        except Exception:
+            pass
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if config.TWILIO_VALIDATE_SIGNATURE:
+        if not validate_twilio_request(url=url, params=form_params, signature=signature):
+            logger.warning(f"[TWILIO-WEBHOOK] Unauthorized Twilio request signature: {signature}")
+            raise HTTPException(status_code=403, detail="Invalid X-Twilio-Signature header")
+
+    twiml_xml = twilio_service.generate_twiml()
+    return Response(content=twiml_xml, media_type="application/xml")
+
+
+@app.post("/api/twilio/call")
+@app.post("/api/telephony/twilio/outbound-call")
+async def twilio_outbound_call(req: TwilioCallRequest):
+    """Initiates an outbound phone call via Twilio REST API."""
+    phone_number = req.phone_number.strip()
+    if not phone_number or len(phone_number) < 5:
+        raise HTTPException(status_code=400, detail="Invalid phone number format. Provide full E.164 number.")
+
+    provider = get_telephony_provider("twilio")
+    res = await provider.initiate_outbound_call(
+        to_number=phone_number,
+        from_number=req.from_number,
+        twiml_url=req.twiml_url,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("error", "Twilio call creation failed"))
+
+    return {
+        "status": res.get("status", "queued"),
+        "call_sid": res.get("call_sid"),
+        "session_id": res.get("call_sid"),
+        "phone_number": phone_number,
+        "raw_response": res.get("raw_response"),
+    }
+
+
 @app.post("/api/telephony/outbound-call")
 async def make_outbound_phone_call(req: OutboundCallRequest):
-    """Initiates an outbound web/telephony call to a phone number via FreeSWITCH SIP gateway."""
+    """Initiates an outbound web/telephony call to a phone number via Twilio or FreeSWITCH SIP gateway."""
     logger.info(f"[OUTBOUND-CALL] Dialing phone number '{req.phone_number}' via gateway '{req.gateway}'")
-    res = freeswitch_esl_service.execute_esl_command("originate", f"sofia/gateway/{req.gateway}/{req.phone_number} &socket(127.0.0.1:8086 async)")
+    provider_name = "twilio" if req.gateway.lower() == "twilio" else "freeswitch"
+    provider = get_telephony_provider(provider_name)
+    res = await provider.initiate_outbound_call(to_number=req.phone_number, gateway=req.gateway)
     return {
         "status": "initiated",
+        "provider": provider_name,
         "phone_number": req.phone_number,
         "gateway": req.gateway,
-        "freeswitch_result": res,
+        "result": res,
     }
 
 
 from fastapi import WebSocket
 from app.telephony.freeswitch.ws_stream import handle_freeswitch_audio_ws
+from app.telephony.twilio_ws import handle_twilio_audio_ws
+
 
 @app.websocket("/api/webrtc/freeswitch/ws")
 async def freeswitch_audio_websocket(websocket: WebSocket, session_id: str = "session_phone_001", uuid: str = "uuid_phone_001"):
     """WebSocket endpoint for FreeSWITCH media audio streaming (Mode B Phone Call)."""
     await handle_freeswitch_audio_ws(websocket=websocket, session_id=session_id, freeswitch_uuid=uuid)
+
+
+@app.websocket("/api/twilio/media-stream")
+@app.websocket("/api/telephony/twilio/ws")
+async def twilio_audio_websocket(websocket: WebSocket):
+    """WebSocket endpoint for Twilio Media Streams (Mode B Phone Call)."""
+    await handle_twilio_audio_ws(websocket=websocket)
 
 
 @app.get("/api/audio/transports/status")

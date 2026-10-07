@@ -164,8 +164,10 @@ class VoicePipelineManager:
         session_id: str,
         transport: Any,
         connection: Any = None,
+        audio_in_sample_rate: int = 16000,
+        audio_out_sample_rate: int = 24000,
     ):
-        """Builds and starts the Pipecat real-time pipeline attached strictly to a WebRTC transport."""
+        """Builds and starts the Pipecat real-time pipeline attached to a transport."""
         if transport is None:
             logger.error("[PIPELINE][FATAL] start_session called without a connected transport!")
             raise ValueError("A connected SmallWebRTC transport is required")
@@ -225,8 +227,8 @@ class VoicePipelineManager:
         task = PipelineTask(
             pipeline,
             params=PipelineParams(
-                audio_in_sample_rate=16000,
-                audio_out_sample_rate=24000,
+                audio_in_sample_rate=audio_in_sample_rate,
+                audio_out_sample_rate=audio_out_sample_rate,
                 enable_metrics=True,
             ),
         )
