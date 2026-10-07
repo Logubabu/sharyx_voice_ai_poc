@@ -145,6 +145,26 @@ async def execute_freeswitch_esl(req: ESLExecuteRequest):
     return freeswitch_esl_service.execute_esl_command(req.command, req.args)
 
 
+from fastapi import WebSocket
+from app.telephony.freeswitch.ws_stream import handle_freeswitch_audio_ws
+
+@app.websocket("/api/webrtc/freeswitch/ws")
+async def freeswitch_audio_websocket(websocket: WebSocket, session_id: str = "session_phone_001", uuid: str = "uuid_phone_001"):
+    """WebSocket endpoint for FreeSWITCH media audio streaming (Mode B Phone Call)."""
+    await handle_freeswitch_audio_ws(websocket=websocket, session_id=session_id, freeswitch_uuid=uuid)
+
+
+@app.get("/api/audio/transports/status")
+async def get_transports_status():
+    """Gets status of active voice transports (WebRTC WebCall vs Phone FreeSWITCH)."""
+    from app.telephony.freeswitch.event_listener import freeswitch_event_listener
+    return {
+        "supported_transports": ["webrtc", "freeswitch"],
+        "freeswitch_summary": freeswitch_event_listener.get_session_summary(),
+    }
+
+
+
 @app.post("/api/start")
 async def start_call(req: StartCallRequest | None = None):
     """Initializes a new Voice AI logical session ID without starting an unattached pipeline."""
