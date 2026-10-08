@@ -19,7 +19,7 @@ def test_twilio_signature_validation():
     config.TWILIO_VALIDATE_SIGNATURE = False
     assert validate_twilio_request(
         url="https://skp54pvx-8000.inc1.devtunnels.ms/api/twilio/voice",
-        params={"From": "+918489808561"},
+        params={"From": "+919876543210"},
         signature="",
     ) is True
 
@@ -47,7 +47,7 @@ async def test_twilio_outbound_call_mock(monkeypatch):
                 return {
                     "sid": "CA_mock_call_sid_12345",
                     "status": "queued",
-                    "to": "+918489808561",
+                    "to": "+919876543210",
                     "from": "+17372508034",
                 }
         return MockResponse()
@@ -55,7 +55,7 @@ async def test_twilio_outbound_call_mock(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
     provider = get_telephony_provider("twilio")
-    res = await provider.initiate_outbound_call("+918489808561")
+    res = await provider.initiate_outbound_call("+919876543210")
     assert res["success"] is True
     assert res["call_sid"] == "CA_mock_call_sid_12345"
     assert res["status"] == "queued"
