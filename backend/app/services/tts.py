@@ -3,6 +3,20 @@ from app.config import Config
 from app.utils.logging import logger
 
 
+class AudioGenerationError(RuntimeError):
+    """Raised when TTS service returns empty or invalid audio payloads."""
+    pass
+
+
+def validate_audio_bytes(audio: bytes, min_bytes: int = 10) -> bool:
+    """Validates that generated audio bytes payload is non-empty and sufficient size."""
+    if not audio:
+        raise AudioGenerationError("TTS service returned empty audio data.")
+    if len(audio) < min_bytes:
+        raise AudioGenerationError(f"TTS service returned suspiciously small audio payload ({len(audio)} bytes).")
+    return True
+
+
 def create_tts_service(cfg: Config) -> Any:
     """Factory function to create TTS service adapter based on config.
     Strictly enforces TTS_PROVIDER without silent fallbacks.

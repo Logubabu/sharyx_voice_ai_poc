@@ -74,13 +74,15 @@ class WebSearchService:
                 "message": "The search query provided was empty.",
             }
 
-        # Check Cache first (if valid TTL)
-        cached_results = search_cache.get(clean_query)
-        if cached_results:
-            duration_ms = (time.time() - start_time) * 1000
-            logger.info(f"[WEB-SEARCH-SERVICE] Cache HIT for query '{clean_query}' ({len(cached_results)} results)")
-            ranked = self.filter_and_rank_results(cached_results)[:max_results]
-            return self._build_success_response(clean_query, ranked, duration_ms, cached=True)
+        # Check Cache first (only if WEB_SEARCH_CACHE_TTL > 0)
+        cache_ttl = getattr(config, "WEB_SEARCH_CACHE_TTL", 0.0)
+        if cache_ttl > 0:
+            cached_results = search_cache.get(clean_query)
+            if cached_results:
+                duration_ms = (time.time() - start_time) * 1000
+                logger.info(f"[WEB-SEARCH-SERVICE] Cache HIT for query '{clean_query}' ({len(cached_results)} results)")
+                ranked = self.filter_and_rank_results(cached_results)[:max_results]
+                return self._build_success_response(clean_query, ranked, duration_ms, cached=True)
 
         tool_metrics.record_tool_start("web_search", clean_query)
         logger.info(f"[WEB-SEARCH-SERVICE] Executing live search for '{clean_query}' (max_results={max_results}, timeout={timeout}s)")
@@ -101,8 +103,9 @@ class WebSearchService:
                     "message": f"No live search results were found for '{clean_query}'.",
                 }
 
-            # Cache raw results
-            search_cache.set(clean_query, results)
+            # Cache raw results only if caching is enabled
+            if cache_ttl > 0:
+                search_cache.set(clean_query, results)
 
             ranked = self.filter_and_rank_results(results)[:max_results]
             tool_metrics.record_tool_completed("web_search", duration_ms, len(ranked), True)

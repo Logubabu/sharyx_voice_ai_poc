@@ -3,7 +3,7 @@ from app.config import Config
 from app.utils.logging import logger
 
 
-def create_llm_service(cfg: Config, is_webcall: bool = True) -> Any:
+def create_llm_service(cfg: Config, is_webcall: bool = True, system_instruction: str | None = None) -> Any:
     """Factory function to create LLM service adapter based on config.
     Strictly enforces LLM_PROVIDER without silent fallbacks.
     """
@@ -21,17 +21,19 @@ def create_llm_service(cfg: Config, is_webcall: bool = True) -> Any:
             from app.tools.registry import global_tool_registry
             from app.tools.router import tool_router
 
-            valid_models = {"gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b", "gemini-2.0-flash-lite"}
-            if model and model.lower() in valid_models:
-                gemini_model = model.lower()
-            else:
-                logger.warning(f"[LLM] Requested model '{model}' is invalid or unavailable. Defaulting to 'gemini-2.0-flash'.")
-                gemini_model = "gemini-2.0-flash"
-            params = {}
+            # Map deprecated or unavailable model names to active Gemini model
+            SUPPORTED_MODELS = {"gemini-3.5-flash-lite", "gemini-3.8-flash"}
+            gemini_model = model if model in SUPPORTED_MODELS else "gemini-3.5-flash-lite"
+            if gemini_model != model:
+                logger.warning(f"[LLM] Model '{model}' is deprecated or unavailable. Falling back to active model '{gemini_model}'.")
+
+            sys_instruction = system_instruction or cfg.SYSTEM_PROMPT
+            params = {"model": gemini_model}
             if hasattr(GoogleLLMService, "Settings"):
-                params["settings"] = GoogleLLMService.Settings(model=gemini_model)
-            else:
-                params["model"] = gemini_model
+                params["settings"] = GoogleLLMService.Settings(
+                    model=gemini_model,
+                    system_instruction=sys_instruction,
+                )
             service = GoogleLLMService(api_key=gemini_key, **params)
             
             # Register Tool Registry function definitions & handlers on Gemini service if enabled

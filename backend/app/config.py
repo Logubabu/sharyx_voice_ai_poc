@@ -39,7 +39,7 @@ class Config:
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "") or os.getenv("GEMINI_API_KEY", "") or os.getenv("GROQ_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.5-flash-lite")
 
     TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
     TTS_API_KEY: str = os.getenv("TTS_API_KEY", "") or os.getenv("ELEVENLABS_API_KEY", "")
@@ -48,9 +48,10 @@ class Config:
     ELEVENLABS_MODEL: str = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    VOICE_DEBUG_AUDIO: bool = os.getenv("VOICE_DEBUG_AUDIO", "true").lower() in ("true", "1", "yes")
 
     # Audio Processor & Telephony Integration Config
-    AUDIO_PROCESSOR: str = os.getenv("AUDIO_PROCESSOR", "RNNoise")
+    AUDIO_PROCESSOR: str = os.getenv("AUDIO_PROCESSOR", "passthrough")
     FREESWITCH_ENABLED: bool = os.getenv("FREESWITCH_ENABLED", "true").lower() in ("true", "1", "yes")
     FREESWITCH_HOST: str = os.getenv("FREESWITCH_HOST", "127.0.0.1:8021")
     TOOL_CALLING_ENABLED: bool = os.getenv("TOOL_CALLING_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -71,7 +72,7 @@ class Config:
     WEB_SEARCH_ENABLED: bool = os.getenv("WEB_SEARCH_ENABLED", "true").lower() in ("true", "1", "yes")
     WEB_SEARCH_MAX_RESULTS: int = _safe_int(os.getenv("WEB_SEARCH_MAX_RESULTS"), 5)
     WEB_SEARCH_TIMEOUT: float = _safe_float(os.getenv("WEB_SEARCH_TIMEOUT"), 5.0)
-    WEB_SEARCH_CACHE_TTL: float = _safe_float(os.getenv("WEB_SEARCH_CACHE_TTL"), 30.0)
+    WEB_SEARCH_CACHE_TTL: float = _safe_float(os.getenv("WEB_SEARCH_CACHE_TTL"), 0.0)
     WEB_FETCH_TIMEOUT: float = _safe_float(os.getenv("WEB_FETCH_TIMEOUT"), 10.0)
     WEB_FETCH_MAX_BYTES: int = _safe_int(os.getenv("WEB_FETCH_MAX_BYTES"), 2000000)
 

@@ -54,6 +54,10 @@ class ToolRegistry:
                 continue
 
             if hasattr(llm_service, "register_function"):
+                if hasattr(llm_service, "has_function") and llm_service.has_function(name):
+                    logger.info(f"[TOOL-REGISTRY] Function tool '{name}' handler already registered via FunctionSchema; skipping manual registration.")
+                    continue
+
                 handler = router.create_handler(tool) if router else None
                 if handler:
                     llm_service.register_function(name, handler, cancel_on_interruption=True)

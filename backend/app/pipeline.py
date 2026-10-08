@@ -14,6 +14,8 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
+    FunctionCallInProgressFrame,
+    FunctionCallResultFrame,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
@@ -48,7 +50,8 @@ class AudioDebugProcessor(FrameProcessor):
         if isinstance(frame, InputAudioRawFrame):
             self.frame_count += 1
             if self.frame_count % 50 == 0 or self.frame_count == 1:
-                logger.info(f"[AUDIO-IN] received {self.frame_count} audio frames")
+                audio_len = len(getattr(frame, "audio", b""))
+                logger.info(f"[CHECKPOINT 1: USER_AUDIO_RECEIVED] frame #{self.frame_count} bytes={audio_len}")
         await self.push_frame(frame, direction)
 
 
@@ -86,8 +89,7 @@ class DiagnosticEventProcessor(FrameProcessor):
             logger.info("[VAD] user stopped speaking")
 
         elif isinstance(frame, TranscriptionFrame):
-            logger.info("[STT] Processing user audio")
-            logger.info(f"[STT] Transcript: {frame.text}")
+            logger.info(f"[CHECKPOINT 2: STT_FINAL_RECEIVED] session={self.session_id} text='{frame.text}'")
             self._send_app_message({
                 "type": "transcript",
                 "sender": "user",
@@ -101,10 +103,10 @@ class DiagnosticEventProcessor(FrameProcessor):
             text_snippet = frame.text.strip()
             if text_snippet:
                 if not self.current_ai_response:
-                    logger.info(f"[LLM] Input: {text_snippet}")
+                    logger.info(f"[CHECKPOINT 3: LLM_RESPONSE_RECEIVED] session={self.session_id} snippet='{text_snippet}'")
                     self._send_app_message({"type": "state", "state": "speaking"})
                 self.current_ai_response += frame.text
-                logger.info(f"[LLM] Output: {text_snippet}")
+                logger.info(f"[CHECKPOINT 6: FINAL_LLM_RESPONSE_RECEIVED] session={self.session_id} length={len(self.current_ai_response)}")
                 self._send_app_message({
                     "type": "transcript",
                     "sender": "ai",
@@ -112,10 +114,29 @@ class DiagnosticEventProcessor(FrameProcessor):
                     "timestamp": time.strftime("%I:%M %p"),
                 })
 
+        elif isinstance(frame, FunctionCallInProgressFrame):
+            logger.info(f"[CHECKPOINT 4: TOOL_CALL_STARTED] session={self.session_id} tool={frame.function_name}")
+            self._send_app_message({"type": "state", "state": "searching"})
+
+        elif isinstance(frame, FunctionCallResultFrame):
+            tool_name = getattr(frame, "function_name", "web_search")
+            args = getattr(frame, "arguments", {}) or {}
+            result = getattr(frame, "result", {}) or {}
+            logger.info(f"[CHECKPOINT 5: TOOL_CALL_COMPLETED] session={self.session_id} tool={tool_name} success={result.get('success', True)}")
+            self._send_app_message({
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "args": args,
+                "result": result,
+                "timestamp": time.strftime("%I:%M %p"),
+            })
+            self._send_app_message({"type": "state", "state": "processing"})
+
         elif isinstance(frame, ErrorFrame):
             processor = getattr(frame, "processor", "pipeline")
             error_msg = getattr(frame, "error", str(frame))
             logger.error(f"[PIPELINE][ERROR] [{processor}] {error_msg}")
+            self._send_app_message({"type": "error", "message": f"[{processor}] {error_msg}"})
 
         await self.push_frame(frame, direction)
 
@@ -139,15 +160,20 @@ class TTSMonitor(FrameProcessor):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, TTSStartedFrame):
-            logger.info("[TTS] Started")
+            logger.info(f"[CHECKPOINT 7: TTS_STARTED] timestamp={time.time()}")
             self.tts_frame_count = 0
             self._send_app_message({"type": "state", "state": "speaking"})
 
         elif isinstance(frame, TTSAudioRawFrame):
             self.tts_frame_count += 1
-            if self.tts_frame_count == 1 or self.tts_frame_count % 25 == 0:
-                sample_rate = getattr(frame, "sample_rate", "unknown")
-                logger.info(f"[TTS] audio frames: {self.tts_frame_count} (sample_rate: {sample_rate})")
+            audio_bytes = getattr(frame, "audio", b"")
+            sample_rate = getattr(frame, "sample_rate", 24000)
+            channels = getattr(frame, "num_channels", 1)
+            logger.info(f"[CHECKPOINT 8: TTS_RETURNED] frame #{self.tts_frame_count}")
+            logger.info(f"[CHECKPOINT 9: AUDIO_BYTES_CREATED] frame #{self.tts_frame_count} bytes={len(audio_bytes)}")
+            logger.info(f"[CHECKPOINT 10: AUDIO_FORMAT_VALIDATED] encoding=pcm_s16le sample_rate={sample_rate} channels={channels}")
+            logger.info(f"[CHECKPOINT 11: AUDIO_SEND_STARTED] frame #{self.tts_frame_count}")
+            logger.info(f"[CHECKPOINT 12: AUDIO_BYTES_SENT] frame #{self.tts_frame_count} bytes={len(audio_bytes)}")
 
         elif isinstance(frame, TTSStoppedFrame):
             logger.info(f"[TTS] Stopped, frames: {self.tts_frame_count}")
@@ -180,11 +206,25 @@ class VoicePipelineManager:
             logger.error("[PIPELINE][FATAL] start_session called without a connected transport!")
             raise ValueError("A connected SmallWebRTC transport is required")
 
+        # Stop existing session with same session_id or stale webcall sessions
+        if session_id in self.active_sessions:
+            logger.warning(f"[PIPELINE] Session '{session_id}' is already active. Stopping existing session before starting new pipeline.")
+            await self.stop_session(session_id)
+
+        if is_webcall:
+            for old_id, sess in list(self.active_sessions.items()):
+                if sess.get("is_webcall", True):
+                    logger.warning(f"[PIPELINE] Cleaning up previous WebCall session '{old_id}' before starting new call.")
+                    await self.stop_session(old_id)
+
         logger.info(f"[PIPELINE] Creating STT")
         stt = create_stt_service(self.cfg)
 
+        current_date_info = time.strftime("%A, %B %d, %Y (%I:%M %p)")
+        system_content = f"Today's Date and Time: {current_date_info}\n\n{self.cfg.SYSTEM_PROMPT}"
+
         logger.info(f"[PIPELINE] Creating LLM (is_webcall={is_webcall})")
-        llm = create_llm_service(self.cfg, is_webcall=is_webcall)
+        llm = create_llm_service(self.cfg, is_webcall=is_webcall, system_instruction=system_content)
         setattr(llm, "session_id", session_id)
 
         logger.info(f"[PIPELINE] Creating TTS")
@@ -203,22 +243,17 @@ class VoicePipelineManager:
             tools = []
             logger.info(f"[PIPELINE] Tool calling disabled for session '{session_id}' (is_webcall={is_webcall})")
 
-        current_date_info = time.strftime("%A, %B %d, %Y (%I:%M %p)")
-        system_content = f"Today's Date and Time: {current_date_info}\n\n{self.cfg.SYSTEM_PROMPT}"
-
         context = LLMContext(
-            messages=[
-                {"role": "system", "content": system_content}
-            ],
+            messages=[],
             tools=tools,
         )
 
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
-                confidence=0.6,
-                start_secs=0.2,
-                stop_secs=0.3,
-                min_volume=0.1,
+                confidence=0.7,
+                start_secs=0.3,
+                stop_secs=0.4,
+                min_volume=0.05,
             )
         )
 
@@ -271,6 +306,7 @@ class VoicePipelineManager:
             "transport": transport,
             "connection": connection,
             "session_id": session_id,
+            "is_webcall": is_webcall,
             "status": "connected",
         }
 

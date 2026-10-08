@@ -76,19 +76,19 @@ class ToolRouter:
         """Sends DataChannel UI updates to browser WebCall sessions."""
         try:
             from app.pipeline import pipeline_manager
+            target_sessions = []
             if session_id and session_id in pipeline_manager.active_sessions:
-                sess = pipeline_manager.active_sessions[session_id]
+                target_sessions.append(pipeline_manager.active_sessions[session_id])
+            else:
+                target_sessions = list(pipeline_manager.active_sessions.values())
+
+            for sess in target_sessions:
                 conn = sess.get("connection")
                 if conn and hasattr(conn, "send_app_message"):
-                    conn.send_app_message(event)
-            else:
-                for s_id, sess in list(pipeline_manager.active_sessions.items()):
-                    conn = sess.get("connection")
-                    if conn and hasattr(conn, "send_app_message"):
-                        try:
-                            conn.send_app_message(event)
-                        except Exception:
-                            pass
+                    try:
+                        conn.send_app_message(event)
+                    except Exception as e:
+                        logger.warning(f"[TOOL-ROUTER] Notice sending app message: {e}")
         except Exception as e:
             logger.warning(f"[TOOL-ROUTER] Notice broadcasting event: {e}")
 
