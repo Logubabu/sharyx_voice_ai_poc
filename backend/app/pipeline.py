@@ -269,7 +269,7 @@ class VoicePipelineManager:
 
         logger.info(f"[PIPELINE] Pipeline created with NoiseCancellationFrameProcessor")
 
-        # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, aggregators.assistant(), diagnostic_processor, tts, tts_monitor, transport.output()
+        # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, diagnostic_processor, tts, tts_monitor, aggregators.assistant(), transport.output()
         pipeline_elements = [
             transport.input(),
             audio_debug,
@@ -277,10 +277,10 @@ class VoicePipelineManager:
             stt,
             aggregators.user(),
             llm,
-            aggregators.assistant(),
             diagnostic_processor,
             tts,
             tts_monitor,
+            aggregators.assistant(),
             transport.output(),
         ]
 
