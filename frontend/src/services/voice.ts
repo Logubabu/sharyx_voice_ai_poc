@@ -9,10 +9,17 @@ export type CallState =
   | 'connected'
   | 'listening'
   | 'processing'
+  | 'searching'
   | 'speaking'
   | 'ending'
   | 'disconnected'
   | 'error';
+
+export interface SourceItem {
+  title: string;
+  url: string;
+  source?: string;
+}
 
 export interface TranscriptItem {
   id: string;
@@ -22,6 +29,7 @@ export interface TranscriptItem {
   toolName?: string;
   toolArgs?: any;
   toolResult?: any;
+  sources?: SourceItem[];
 }
 
 export interface NoiseCancellationInfo {
@@ -76,10 +84,6 @@ export class VoiceCallService {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 16000,
-          // @ts-ignore
-          latency: 0.0,
         },
       });
       console.log('[MIC] Permission granted');
@@ -272,6 +276,7 @@ export class VoiceCallService {
             toolName: data.tool_name,
             toolArgs: data.args,
             toolResult: data.result,
+            sources: data.result?.sources || undefined,
             timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           });
         }

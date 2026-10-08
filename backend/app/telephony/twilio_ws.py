@@ -57,7 +57,11 @@ async def handle_twilio_audio_ws(websocket: WebSocket):
             call_sid=call_sid,
             account_sid=config.TWILIO_ACCOUNT_SID,
             auth_token=config.TWILIO_AUTH_TOKEN,
-            params=TwilioFrameSerializer.InputParams(auto_hang_up=False),
+            params=TwilioFrameSerializer.InputParams(
+                twilio_sample_rate=8000,
+                sample_rate=8000,
+                auto_hang_up=False,
+            ),
         )
 
         # 3. Configure FastAPIWebsocketTransport
@@ -78,6 +82,7 @@ async def handle_twilio_audio_ws(websocket: WebSocket):
             transport=transport,
             audio_in_sample_rate=8000,
             audio_out_sample_rate=8000,
+            is_webcall=False,
         )
 
         logger.info(f"[TWILIO-WS] Pipecat Voice AI pipeline active for call '{call_sid}' (streamSid: {stream_sid})")

@@ -55,9 +55,10 @@ class AudioDebugProcessor(FrameProcessor):
 class DiagnosticEventProcessor(FrameProcessor):
     """Intercepts pipeline frames to produce structured diagnostic logs and real-time DataChannel events."""
 
-    def __init__(self, connection: Any = None):
+    def __init__(self, connection: Any = None, session_id: str = "default_session"):
         super().__init__()
         self.connection = connection
+        self.session_id = session_id
         self.current_ai_response = ""
 
     def _send_app_message(self, data: dict):
@@ -72,8 +73,14 @@ class DiagnosticEventProcessor(FrameProcessor):
 
         if isinstance(frame, UserStartedSpeakingFrame):
             logger.info("[VAD] user started speaking (barge-in interruption detected)")
+            from app.tools.router import tool_router
+            cancelled_count = tool_router.cancel_pending_tools(self.session_id)
+            tool_router.reset_turn(self.session_id)
+            if cancelled_count > 0:
+                logger.info(f"[PIPELINE][BARGE-IN] Cancelled {cancelled_count} in-flight tool tasks due to user interruption")
             self._send_app_message({"type": "interruption"})
             self._send_app_message({"type": "state", "state": "listening"})
+            self.current_ai_response = ""
 
         elif isinstance(frame, UserStoppedSpeakingFrame):
             logger.info("[VAD] user stopped speaking")
@@ -166,6 +173,7 @@ class VoicePipelineManager:
         connection: Any = None,
         audio_in_sample_rate: int = 16000,
         audio_out_sample_rate: int = 24000,
+        is_webcall: bool = True,
     ):
         """Builds and starts the Pipecat real-time pipeline attached to a transport."""
         if transport is None:
@@ -175,24 +183,42 @@ class VoicePipelineManager:
         logger.info(f"[PIPELINE] Creating STT")
         stt = create_stt_service(self.cfg)
 
-        logger.info(f"[PIPELINE] Creating LLM")
-        llm = create_llm_service(self.cfg)
+        logger.info(f"[PIPELINE] Creating LLM (is_webcall={is_webcall})")
+        llm = create_llm_service(self.cfg, is_webcall=is_webcall)
+        setattr(llm, "session_id", session_id)
 
         logger.info(f"[PIPELINE] Creating TTS")
         tts = create_tts_service(self.cfg)
 
+        from app.tools.registry import global_tool_registry
+        from app.tools.router import tool_router
+
+        tool_calling_enabled = self.cfg.WEBCALL_TOOL_CALLING_ENABLED if is_webcall else False
+        web_search_enabled = self.cfg.WEBCALL_WEB_SEARCH_ENABLED if is_webcall else False
+
+        if tool_calling_enabled:
+            tools = global_tool_registry.get_function_schemas(enable_web_search=web_search_enabled, router=tool_router)
+            logger.info(f"[PIPELINE] Tools configured for WebCall (count={len(tools)}, web_search={web_search_enabled})")
+        else:
+            tools = []
+            logger.info(f"[PIPELINE] Tool calling disabled for session '{session_id}' (is_webcall={is_webcall})")
+
+        current_date_info = time.strftime("%A, %B %d, %Y (%I:%M %p)")
+        system_content = f"Today's Date and Time: {current_date_info}\n\n{self.cfg.SYSTEM_PROMPT}"
+
         context = LLMContext(
             messages=[
-                {"role": "system", "content": self.cfg.SYSTEM_PROMPT}
-            ]
+                {"role": "system", "content": system_content}
+            ],
+            tools=tools,
         )
 
         vad_analyzer = SileroVADAnalyzer(
             params=VADParams(
-                confidence=0.5,
-                start_secs=0.08,
-                stop_secs=0.18,
-                min_volume=0.10,
+                confidence=0.6,
+                start_secs=0.2,
+                stop_secs=0.3,
+                min_volume=0.1,
             )
         )
 
@@ -203,12 +229,12 @@ class VoicePipelineManager:
 
         audio_debug = AudioDebugProcessor()
         noise_cancellation_processor = NoiseCancellationFrameProcessor(connection=connection)
-        diagnostic_processor = DiagnosticEventProcessor(connection=connection)
+        diagnostic_processor = DiagnosticEventProcessor(connection=connection, session_id=session_id)
         tts_monitor = TTSMonitor(connection=connection)
 
         logger.info(f"[PIPELINE] Pipeline created with NoiseCancellationFrameProcessor")
 
-        # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, diagnostic_processor, tts, TTSMonitor, transport.output(), aggregators.assistant()
+        # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, aggregators.assistant(), diagnostic_processor, tts, tts_monitor, transport.output()
         pipeline_elements = [
             transport.input(),
             audio_debug,
@@ -216,11 +242,11 @@ class VoicePipelineManager:
             stt,
             aggregators.user(),
             llm,
+            aggregators.assistant(),
             diagnostic_processor,
             tts,
             tts_monitor,
             transport.output(),
-            aggregators.assistant(),
         ]
 
         pipeline = Pipeline(pipeline_elements)
@@ -253,8 +279,16 @@ class VoicePipelineManager:
         # Add initial greeting prompt so context is valid for Gemini (has non-system message)
         context.add_message({"role": "user", "content": "Greet the user in one short sentence."})
 
-        # Queue LLMRunFrame so bot speaks first on connect
-        await task.queue_frame(LLMRunFrame())
+        async def trigger_initial_greeting():
+            if connection:
+                # Wait for WebRTC connection to reach connected state before sending initial audio
+                for _ in range(25):
+                    if hasattr(connection, "is_connected") and connection.is_connected():
+                        break
+                    await asyncio.sleep(0.1)
+            await task.queue_frame(LLMRunFrame())
+
+        asyncio.create_task(trigger_initial_greeting())
 
         return self.active_sessions[session_id]
 

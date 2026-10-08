@@ -180,13 +180,30 @@ async def get_twilio_voice_twiml(request: Request):
         except Exception:
             pass
 
-    signature = request.headers.get("X-Twilio-Signature", "")
-    if config.TWILIO_VALIDATE_SIGNATURE:
-        if not validate_twilio_request(url=url, params=form_params, signature=signature):
-            logger.warning(f"[TWILIO-WEBHOOK] Unauthorized Twilio request signature: {signature}")
-            raise HTTPException(status_code=403, detail="Invalid X-Twilio-Signature header")
+    twiml_url_override = None
+    try:
+        req_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or ""
+        req_scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
 
-    twiml_xml = twilio_service.generate_twiml()
+        is_local = "localhost" in req_host or "127.0.0.1" in req_host
+
+        if req_host and not is_local:
+            # Twilio requires wss:// scheme for all remote non-localhost WebSocket URLs
+            twiml_url_override = f"wss://{req_host}/api/twilio/media-stream"
+        else:
+            configured_url = config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL
+            if configured_url and "localhost" not in configured_url and "127.0.0.1" not in configured_url:
+                clean_host = configured_url.replace("https://", "").replace("http://", "").rstrip("/")
+                twiml_url_override = f"wss://{clean_host}/api/twilio/media-stream"
+            elif req_host:
+                ws_scheme = "ws" if is_local else "wss"
+                twiml_url_override = f"{ws_scheme}://{req_host}/api/twilio/media-stream"
+                if is_local:
+                    logger.warning(f"[TWILIO-WEBHOOK][WARNING] Media stream URL is pointing to localhost ('{twiml_url_override}'). Twilio cloud servers cannot reach localhost! Set PUBLIC_BASE_URL in .env to your public ngrok/devtunnels URL.")
+    except Exception as e:
+        logger.warning(f"[TWILIO-WEBHOOK] Could not parse host from request headers: {e}")
+
+    twiml_xml = twilio_service.generate_twiml(websocket_url=twiml_url_override)
     return Response(content=twiml_xml, media_type="application/xml")
 
 

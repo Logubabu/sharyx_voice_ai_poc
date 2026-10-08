@@ -29,8 +29,13 @@ class TwilioService:
             twiml_url: Optional TwiML URL for handling call voice/WebSocket stream
         """
         caller_id = from_number or self.from_number
-        base_url = (config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL).rstrip("/")
+        candidates = [config.PUBLIC_BASE_URL, config.TWILIO_WEBHOOK_BASE_URL]
+        public_url = next((u for u in candidates if u and "localhost" not in u and "127.0.0.1" not in u), None)
+        base_url = (public_url or config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL or "http://localhost:8000").rstrip("/")
         target_url = twiml_url or f"{base_url}/api/twilio/voice"
+
+        if "localhost" in target_url or "127.0.0.1" in target_url:
+            logger.warning(f"[TWILIO][WARNING] Twilio webhook URL '{target_url}' is set to localhost. Twilio cloud servers cannot reach localhost! Set PUBLIC_BASE_URL in .env to your devtunnels/ngrok URL.")
 
         logger.info(f"[TWILIO] Making outbound call to {to_number} from {caller_id} via Twilio REST API (Webhook: {target_url})")
 

@@ -4,7 +4,7 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 
 
 class BaseTool(ABC):
-    """Abstract Base Class for modular voice AI tools."""
+    """Abstract Base Class for modular Voice AI tools."""
 
     def __init__(self, name: str, description: str, timeout: float = 8.0, permissions: str = "public"):
         self.name = name

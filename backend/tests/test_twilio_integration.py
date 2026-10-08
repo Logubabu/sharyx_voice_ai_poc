@@ -18,7 +18,7 @@ def test_twilio_signature_validation():
     # When TWILIO_VALIDATE_SIGNATURE is disabled for local dev/testing
     config.TWILIO_VALIDATE_SIGNATURE = False
     assert validate_twilio_request(
-        url="https://skp54pvx-8000.inc1.devtunnels.ms/api/twilio/voice",
+        url="http://localhost:8000/api/twilio/voice",
         params={"From": "+919876543210"},
         signature="",
     ) is True

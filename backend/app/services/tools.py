@@ -200,6 +200,42 @@ class VoiceToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self):
+        from app.services.search.tools import WEB_SEARCH_SCHEMA, WEB_FETCH_SCHEMA, handle_web_search, handle_web_fetch
+
+        self.tools["web_search"] = {
+            "schema": WEB_SEARCH_SCHEMA,
+            "definition": {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": WEB_SEARCH_SCHEMA.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": WEB_SEARCH_SCHEMA.properties,
+                        "required": WEB_SEARCH_SCHEMA.required,
+                    }
+                }
+            },
+            "handler": handle_web_search,
+        }
+
+        self.tools["web_fetch"] = {
+            "schema": WEB_FETCH_SCHEMA,
+            "definition": {
+                "type": "function",
+                "function": {
+                    "name": "web_fetch",
+                    "description": WEB_FETCH_SCHEMA.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": WEB_FETCH_SCHEMA.properties,
+                        "required": WEB_FETCH_SCHEMA.required,
+                    }
+                }
+            },
+            "handler": handle_web_fetch,
+        }
+
         self.tools["check_order_status"] = {
             "definition": {
                 "type": "function",
@@ -331,15 +367,19 @@ class VoiceToolRegistry:
             "handler": handle_get_audio_processor_status
         }
 
-    def get_tool_definitions(self):
-        """Returns JSON schema definitions for LLM registration."""
-        return [tool["definition"] for tool in self.tools.values()]
+    def get_function_schemas(self, enable_web_search: bool = True, router: Any = None):
+        """Returns schemas for LLM context registration."""
+        from app.tools.registry import global_tool_registry
+        return global_tool_registry.get_function_schemas(enable_web_search=enable_web_search, router=router)
 
-    def register_tools_on_llm(self, llm_service: Any):
+    def get_tool_definitions(self, enable_web_search: bool = True):
+        """Returns JSON schema definitions for LLM registration."""
+        from app.tools.registry import global_tool_registry
+        return global_tool_registry.get_function_schemas(enable_web_search=enable_web_search)
+
+    def register_tools_on_llm(self, llm_service: Any, enable_web_search: bool = True, router: Any = None):
         """Registers all tool handlers directly on the LLM service instance."""
-        for name, tool in self.tools.items():
-            if hasattr(llm_service, "register_function"):
-                logger.info(f"[TOOL-REGISTRY] Registering function tool '{name}' on LLM service.")
-                llm_service.register_function(name, tool["handler"])
+        from app.tools.registry import global_tool_registry
+        return global_tool_registry.register_tools_on_llm(llm_service, enable_web_search=enable_web_search, router=router)
 
 tool_registry = VoiceToolRegistry()
