@@ -43,56 +43,56 @@ class DuckDuckGoProvider(SearchProvider):
                 response = await client.post(self.endpoint_url, data=data, headers=headers)
                 duration_ms = (time.time() - start_time) * 1000
 
-                if response.status_code != 200:
-                    logger.error(f"[DUCKDUCKGO][ERROR] HTTP {response.status_code} ({duration_ms:.1f}ms)")
-                    return []
-
-                soup = BeautifulSoup(response.text, "html.parser")
                 results: List[SearchResult] = []
+                if response.status_code != 200:
+                    logger.warning(f"[DUCKDUCKGO] HTTP {response.status_code} ({duration_ms:.1f}ms). Will fallback to GoogleNewsProvider.")
+                else:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    for result in soup.find_all("div", class_="result"):
+                        if len(results) >= max_results:
+                            break
 
-                for result in soup.find_all("div", class_="result"):
-                    if len(results) >= max_results:
-                        break
+                        title_tag = result.find("a", class_="result__a")
+                        snippet_tag = result.find("a", class_="result__snippet")
 
-                    title_tag = result.find("a", class_="result__a")
-                    snippet_tag = result.find("a", class_="result__snippet")
+                        if not title_tag:
+                            continue
 
-                    if not title_tag:
-                        continue
+                        title = title_tag.get_text(strip=True)
+                        raw_href = title_tag.get("href", "")
 
-                    title = title_tag.get_text(strip=True)
-                    raw_href = title_tag.get("href", "")
+                        clean_url = raw_href
+                        if "uddg=" in raw_href:
+                            parsed = urlparse(raw_href)
+                            qs = parse_qs(parsed.query)
+                            if "uddg" in qs:
+                                clean_url = qs["uddg"][0]
+                        elif raw_href.startswith("//"):
+                            clean_url = "https:" + raw_href
 
-                    clean_url = raw_href
-                    if "uddg=" in raw_href:
-                        parsed = urlparse(raw_href)
-                        qs = parse_qs(parsed.query)
-                        if "uddg" in qs:
-                            clean_url = qs["uddg"][0]
-                    elif raw_href.startswith("//"):
-                        clean_url = "https:" + raw_href
+                        snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
 
-                    snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
-
-                    if clean_url and (clean_url.startswith("http://") or clean_url.startswith("https://")):
-                        results.append(
-                            SearchResult(
-                                title=title,
-                                url=clean_url,
-                                snippet=snippet,
-                                source="DuckDuckGo",
-                                published_at="",
+                        if clean_url and (clean_url.startswith("http://") or clean_url.startswith("https://")):
+                            results.append(
+                                SearchResult(
+                                    title=title,
+                                    url=clean_url,
+                                    snippet=snippet,
+                                    source="DuckDuckGo",
+                                    published_at="",
+                                )
                             )
-                        )
 
                 logger.info(f"[DUCKDUCKGO] Found {len(results)} results in {duration_ms:.1f}ms for '{clean_query}'")
-                return results
+                if results:
+                    return results
 
-        except httpx.TimeoutException:
-            duration_ms = (time.time() - start_time) * 1000
-            logger.error(f"[DUCKDUCKGO][TIMEOUT] Search timed out after {duration_ms:.1f}ms")
-            return []
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             logger.error(f"[DUCKDUCKGO][ERROR] Search failed after {duration_ms:.1f}ms: {e}")
-            return []
+
+        # Fallback to GoogleNewsProvider if DuckDuckGo returned 0 results or failed
+        logger.info(f"[DUCKDUCKGO] DuckDuckGo HTML returned 0 results for '{clean_query}'. Falling back to GoogleNewsProvider.")
+        from app.services.search.google_news import GoogleNewsProvider
+        google_news = GoogleNewsProvider()
+        return await google_news.search(query=clean_query, max_results=max_results, timeout=timeout)

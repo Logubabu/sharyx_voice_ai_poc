@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
-    AudioRawFrame,
     ErrorFrame,
     Frame,
     InputAudioRawFrame,
@@ -34,7 +33,7 @@ from app.config import Config
 from app.services.stt import create_stt_service
 from app.services.llm import create_llm_service
 from app.services.tts import create_tts_service
-from app.services.audio_processor import NoiseCancellationFrameProcessor, audio_processor_factory
+from app.services.audio_processor import NoiseCancellationFrameProcessor
 from app.utils.logging import logger
 
 
@@ -84,6 +83,8 @@ class DiagnosticEventProcessor(FrameProcessor):
             self._send_app_message({"type": "interruption"})
             self._send_app_message({"type": "state", "state": "listening"})
             self.current_ai_response = ""
+            # Immediately push TTSStoppedFrame to stop active transport audio playback
+            await self.push_frame(TTSStoppedFrame(), direction)
 
         elif isinstance(frame, UserStoppedSpeakingFrame):
             logger.info(f"[CALL] call_id={self.session_id} [VAD] user stopped speaking")
@@ -205,6 +206,7 @@ class VoicePipelineManager:
         is_webcall: bool = True,
         tenant_id: str = "default_tenant",
         knowledge_base_id: Optional[str] = None,
+        extra_system_prompt: Optional[str] = None,
     ):
         """Builds and starts the Pipecat real-time pipeline attached to a transport."""
         if transport is None:
@@ -222,7 +224,7 @@ class VoicePipelineManager:
                     logger.warning(f"[PIPELINE] Cleaning up previous WebCall session '{old_id}' before starting new call.")
                     await self.stop_session(old_id)
 
-        logger.info(f"[PIPELINE] Creating STT")
+        logger.info("[PIPELINE] Creating STT")
         stt = create_stt_service(self.cfg)
 
         current_date_info = time.strftime("%A, %B %d, %Y (%I:%M %p)")
@@ -231,6 +233,8 @@ class VoicePipelineManager:
             system_content += f"\nActive Session Tenant ID: {tenant_id}"
         if knowledge_base_id:
             system_content += f"\nActive Session Knowledge Base ID: {knowledge_base_id}"
+        if extra_system_prompt:
+            system_content += f"\n\n{extra_system_prompt}"
 
         logger.info(f"[PIPELINE] Creating LLM (is_webcall={is_webcall}, tenant={tenant_id}, kb_id={knowledge_base_id})")
         llm = create_llm_service(self.cfg, is_webcall=is_webcall, system_instruction=system_content)
@@ -238,7 +242,7 @@ class VoicePipelineManager:
         setattr(llm, "tenant_id", tenant_id)
         setattr(llm, "knowledge_base_id", knowledge_base_id)
 
-        logger.info(f"[PIPELINE] Creating TTS")
+        logger.info("[PIPELINE] Creating TTS")
         tts = create_tts_service(self.cfg)
 
         from app.tools.registry import global_tool_registry
@@ -278,7 +282,7 @@ class VoicePipelineManager:
         diagnostic_processor = DiagnosticEventProcessor(connection=connection, session_id=session_id)
         tts_monitor = TTSMonitor(connection=connection, session_id=session_id)
 
-        logger.info(f"[PIPELINE] Pipeline created with NoiseCancellationFrameProcessor")
+        logger.info("[PIPELINE] Pipeline created with NoiseCancellationFrameProcessor")
 
         # Pipeline order: transport.input(), audio_debug, noise_cancellation_processor, stt, aggregators.user(), llm, diagnostic_processor, tts, tts_monitor, aggregators.assistant(), transport.output()
         pipeline_elements = [
@@ -323,12 +327,14 @@ class VoicePipelineManager:
             "status": "connected",
         }
 
-        logger.info(f"[PIPELINE] Pipeline started")
+        logger.info(f"[PIPELINE] Pipeline started for session '{session_id}'")
 
         # Add initial greeting prompt so context is valid for Gemini (has non-system message)
         context.add_message({"role": "user", "content": "Greet the user in one short sentence."})
 
         async def trigger_initial_greeting():
+            # Allow pipeline worker runner and transport 0.6s to initialize before queueing initial LLMRunFrame
+            await asyncio.sleep(0.6)
             if connection:
                 # Wait for WebRTC connection to reach connected state before sending initial audio
                 for _ in range(25):

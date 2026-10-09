@@ -2,10 +2,8 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.config import Config
-from app.tools.base import BaseTool
 from app.tools.registry import ToolRegistry
-from app.tools.router import ToolRouter, TurnTracker
+from app.tools.router import ToolRouter
 from app.tools.web_search.service import WebSearchService
 from app.tools.web_search.tool import WebSearchTool
 from app.services.search.provider import SearchResult, SearchProvider
@@ -69,9 +67,9 @@ async def test_tool_router_turn_limit():
     session_id = "test_session_turn_limit"
 
     # Simulate 3 successful tool calls in the same turn
-    res1 = await router.route_tool_call("web_search", "call_1", {"query": "Bitcoin price 1"}, session_id=session_id)
-    res2 = await router.route_tool_call("web_search", "call_2", {"query": "Bitcoin price 2"}, session_id=session_id)
-    res3 = await router.route_tool_call("web_search", "call_3", {"query": "Bitcoin price 3"}, session_id=session_id)
+    _ = await router.route_tool_call("web_search", "call_1", {"query": "Bitcoin price 1"}, session_id=session_id)
+    _ = await router.route_tool_call("web_search", "call_2", {"query": "Bitcoin price 2"}, session_id=session_id)
+    _ = await router.route_tool_call("web_search", "call_3", {"query": "Bitcoin price 3"}, session_id=session_id)
 
     # 4th call should be blocked by turn limit (MAX_TOOL_CALLS_PER_TURN = 3)
     res4 = await router.route_tool_call("web_search", "call_4", {"query": "Bitcoin price 4"}, session_id=session_id)
@@ -84,7 +82,7 @@ async def test_tool_router_duplicate_prevention():
     router = ToolRouter()
     session_id = "test_session_duplicate"
 
-    res1 = await router.route_tool_call("web_search", "call_1", {"query": "Tesla stock price"}, session_id=session_id)
+    _ = await router.route_tool_call("web_search", "call_1", {"query": "Tesla stock price"}, session_id=session_id)
     res2 = await router.route_tool_call("web_search", "call_2", {"query": "Tesla stock price"}, session_id=session_id)
     assert res2.get("duplicate") is True
 
@@ -129,29 +127,30 @@ async def test_unregistered_tool_rejection():
 @pytest.mark.asyncio
 async def test_handler_supports_function_call_params():
     router = ToolRouter()
-    tool = WebSearchTool()
-    handler = router.create_handler(tool)
+    mock_provider = DummySearchProvider(mock_results=[SearchResult(title="BTC", url="https://btc.org", snippet="$65000")])
+    with patch("app.tools.web_search.service.create_search_provider", return_value=mock_provider):
+        tool = WebSearchTool()
+        handler = router.create_handler(tool)
 
-    class MockParams:
-        function_name = "web_search"
-        tool_call_id = "call_pipecat_1"
-        arguments = {"query": "current Bitcoin price USD"}
-        llm = MagicMock(session_id="test_params_session")
-        result_callback = AsyncMock()
+        class MockParams:
+            function_name = "web_search"
+            tool_call_id = "call_pipecat_1"
+            arguments = {"query": "current Bitcoin price USD"}
+            llm = MagicMock(session_id="test_params_session")
+            result_callback = AsyncMock()
 
-    params = MockParams()
-    res = await handler(params)
-    assert res["success"] is True
-    assert params.result_callback.called
+        params = MockParams()
+        res = await handler(params)
+        assert res["success"] is True
+        assert params.result_callback.called
 
 
 @pytest.mark.asyncio
 async def test_pipeline_manager_initialization():
     from app.pipeline import VoicePipelineManager
-    from app.config import Config
+    from app.config import config as app_cfg
     
-    cfg = Config()
-    mgr = VoicePipelineManager(cfg)
+    mgr = VoicePipelineManager(app_cfg)
     
     mock_transport = MagicMock()
     mock_transport.input.return_value = MagicMock()

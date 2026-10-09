@@ -1,8 +1,5 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
-
-from app.config import Config
 from app.services.tts import AudioGenerationError, validate_audio_bytes
 from app.tools.router import ToolRouter
 from app.tools.web_search.service import WebSearchService
@@ -10,10 +7,6 @@ from app.services.search.provider import SearchResult, SearchProvider
 from pipecat.frames.frames import (
     TextFrame,
     TTSAudioRawFrame,
-    TTSStartedFrame,
-    TTSStoppedFrame,
-    LLMFullResponseStartFrame,
-    LLMFullResponseEndFrame,
 )
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 

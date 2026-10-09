@@ -28,7 +28,18 @@ class TwilioService:
             from_number: Sender Twilio phone number (defaults to config.TWILIO_FROM_NUMBER)
             twiml_url: Optional TwiML URL for handling call voice/WebSocket stream
         """
-        caller_id = from_number or self.from_number
+        account_sid = config.TWILIO_ACCOUNT_SID or self.account_sid
+        auth_token = config.TWILIO_AUTH_TOKEN or self.auth_token
+        caller_id = from_number or config.TWILIO_FROM_NUMBER or config.TWILIO_PHONE_NUMBER or self.from_number
+
+        if not account_sid or not auth_token:
+            logger.error("[TWILIO][FATAL] Twilio credentials missing (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN).")
+            return {
+                "success": False,
+                "error": "Twilio API credentials not configured in .env",
+            }
+
+        api_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls.json"
         candidates = [config.PUBLIC_BASE_URL, config.TWILIO_WEBHOOK_BASE_URL]
         public_url = next((u for u in candidates if u and "localhost" not in u and "127.0.0.1" not in u), None)
         base_url = (public_url or config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL or "http://localhost:8000").rstrip("/")
@@ -48,9 +59,9 @@ class TwilioService:
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
-                    self.api_url,
+                    api_url,
                     data=data,
-                    auth=(self.account_sid, self.auth_token),
+                    auth=(account_sid, auth_token),
                 )
 
                 if response.status_code in (200, 201):
@@ -94,14 +105,14 @@ class TwilioService:
     def generate_twiml(self, websocket_url: Optional[str] = None) -> str:
         """Generates TwiML XML payload to connect call audio to Pipecat WebSocket stream."""
         if not websocket_url:
-            base_url = (config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL).rstrip("/")
-            ws_scheme = "wss" if base_url.startswith("https") else "ws"
-            clean_host = base_url.replace("https://", "").replace("http://", "").rstrip("/")
+            base_url = (config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL or "http://localhost:8000").rstrip("/")
+            is_local = "localhost" in base_url or "127.0.0.1" in base_url
+            ws_scheme = "ws" if is_local else "wss"
+            clean_host = base_url.replace("wss://", "").replace("ws://", "").replace("https://", "").replace("http://", "").rstrip("/")
             websocket_url = f"{ws_scheme}://{clean_host}/api/twilio/media-stream"
 
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Aditi">Connecting your call to Sharyx Voice AI assistant. Please wait.</Say>
     <Connect>
         <Stream url="{websocket_url}" />
     </Connect>

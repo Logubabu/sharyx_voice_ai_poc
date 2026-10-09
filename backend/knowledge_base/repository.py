@@ -2,12 +2,10 @@ import asyncio
 import json
 import sqlite3
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from datetime import datetime
 
 from knowledge_base.models import KnowledgeBaseModel, DocumentModel, DocumentChunkModel
-from knowledge_base.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError
-from app.utils.logging import logger
 
 
 class KnowledgeBaseRepository:

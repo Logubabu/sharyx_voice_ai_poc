@@ -1,5 +1,4 @@
 import time
-import pytest
 from app.services.search.cache import SearchCache
 from app.services.search.provider import SearchResult
 

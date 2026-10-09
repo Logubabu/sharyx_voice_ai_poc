@@ -2,7 +2,7 @@ import asyncio
 import time
 from app.config import config
 from app.pipeline import VoicePipelineManager
-from pipecat.frames.frames import TranscriptionFrame, LLMRunFrame, TextFrame, TTSAudioRawFrame, TTSStartedFrame, TTSStoppedFrame
+from pipecat.frames.frames import TranscriptionFrame
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
 class MockTransportInput(FrameProcessor):
@@ -43,7 +43,6 @@ async def run_trace():
         is_webcall=True
     )
 
-    pipeline = session["pipeline"]
     task = session["task"]
 
     # Wait for pipeline start frame to reach end

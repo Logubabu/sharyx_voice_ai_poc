@@ -1,7 +1,5 @@
-import pytest
 import numpy as np
 from app.noise_cancellation.rnnoise import RNNoiseSuppressor
-from app.noise_cancellation.webrtc_ns import WebRTCAPMNoiseSuppressor
 from app.noise_cancellation.manager import NoiseCancellationManager
 
 

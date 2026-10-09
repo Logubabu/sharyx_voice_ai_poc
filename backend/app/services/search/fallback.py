@@ -21,7 +21,7 @@ class FallbackSearchProvider(SearchProvider):
             results = await self.primary_provider.search(query=query, max_results=max_results, timeout=timeout)
             if results:
                 return results
-            logger.info(f"[SEARCH-PROVIDER] Primary provider returned 0 results. Falling back to DuckDuckGo.")
+            logger.info("[SEARCH-PROVIDER] Primary provider returned 0 results. Falling back to DuckDuckGo.")
         except Exception as e:
             logger.warning(f"[SEARCH-PROVIDER] Primary provider failed ({e}). Falling back to DuckDuckGo.")
 

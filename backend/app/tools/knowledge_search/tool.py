@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 
 from app.tools.base import BaseTool

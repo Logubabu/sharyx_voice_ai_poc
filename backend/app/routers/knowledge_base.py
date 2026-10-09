@@ -1,7 +1,5 @@
-import os
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header, Query
-from pydantic import BaseModel
 
 from knowledge_base.service import kb_service
 from knowledge_base.schemas import (
@@ -12,7 +10,7 @@ from knowledge_base.schemas import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
 )
-from knowledge_base.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError, TenantAccessError
+from knowledge_base.exceptions import KnowledgeBaseNotFoundError, DocumentNotFoundError
 from knowledge_base.metrics import kb_metrics
 from app.utils.logging import logger
 

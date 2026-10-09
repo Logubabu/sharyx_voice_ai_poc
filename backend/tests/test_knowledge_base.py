@@ -8,7 +8,7 @@ import sys
 # Ensure backend root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from knowledge_base.parsers import TextParser, PDFParser, DocxParser, CSVParser, JSONParser, HTMLParser
+from knowledge_base.parsers import TextParser, CSVParser, JSONParser, HTMLParser
 from knowledge_base.chunking import StructureAwareChunker
 from knowledge_base.service import KnowledgeBaseService
 from knowledge_base.schemas import KnowledgeBaseCreate

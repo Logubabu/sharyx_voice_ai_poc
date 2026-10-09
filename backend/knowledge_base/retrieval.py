@@ -1,10 +1,9 @@
-import asyncio
 import time
 from typing import List, Dict, Any, Optional
 
 from knowledge_base.vector_store import VectorStore
 from knowledge_base.embeddings import EmbeddingProvider
-from knowledge_base.reranking import Reranker, PassThroughReranker, CrossEncoderReranker
+from knowledge_base.reranking import Reranker, PassThroughReranker
 from knowledge_base.schemas import KnowledgeSearchResultItem, KnowledgeSearchResponse
 from knowledge_base.security import SecurityManager
 from knowledge_base.metrics import kb_metrics

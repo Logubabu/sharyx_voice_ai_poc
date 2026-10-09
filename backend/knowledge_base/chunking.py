@@ -1,6 +1,6 @@
 import hashlib
 import re
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from knowledge_base.parsers import ParsedPage
 from knowledge_base.models import DocumentChunkModel

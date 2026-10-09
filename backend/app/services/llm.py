@@ -39,8 +39,8 @@ def create_llm_service(cfg: Config, is_webcall: bool = True, system_instruction:
             service = GoogleLLMService(api_key=gemini_key, **params)
             
             # Register Tool Registry function definitions & handlers on Gemini service if enabled
-            tool_calling_enabled = cfg.WEBCALL_TOOL_CALLING_ENABLED if is_webcall else False
-            enable_web = cfg.WEBCALL_WEB_SEARCH_ENABLED if is_webcall else False
+            tool_calling_enabled = cfg.WEBCALL_TOOL_CALLING_ENABLED if is_webcall else cfg.TOOL_CALLING_ENABLED
+            enable_web = cfg.WEBCALL_WEB_SEARCH_ENABLED if is_webcall else cfg.WEB_SEARCH_ENABLED
 
             if tool_calling_enabled:
                 global_tool_registry.register_tools_on_llm(service, enable_web_search=enable_web, router=tool_router)

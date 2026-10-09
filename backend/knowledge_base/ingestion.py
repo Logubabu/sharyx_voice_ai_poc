@@ -1,17 +1,13 @@
 import asyncio
-import hashlib
 import os
-import shutil
 import time
-from typing import Optional, List, Dict, Any
 
-from knowledge_base.models import DocumentModel, DocumentChunkModel
 from knowledge_base.repository import KnowledgeBaseRepository
 from knowledge_base.parsers import ParserFactory
 from knowledge_base.chunking import StructureAwareChunker
 from knowledge_base.embeddings import EmbeddingProvider
 from knowledge_base.vector_store import VectorStore
-from knowledge_base.exceptions import DocumentProcessingError, KnowledgeBaseError
+from knowledge_base.exceptions import DocumentProcessingError
 from app.utils.logging import logger
 
 

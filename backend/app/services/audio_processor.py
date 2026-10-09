@@ -1,7 +1,7 @@
 import time
 import math
 import struct
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pipecat.frames.frames import Frame, InputAudioRawFrame, UserAudioRawFrame
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from app.config import config

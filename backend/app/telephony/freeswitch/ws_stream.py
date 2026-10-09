@@ -1,6 +1,5 @@
 from fastapi import WebSocket, WebSocketDisconnect
 from app.audio.transports.freeswitch import FreeSWITCHVoiceTransport
-from app.audio.codec import AudioResampler
 from app.utils.logging import logger
 from app.utils.audit import audit_logger
 
@@ -35,7 +34,7 @@ async def handle_freeswitch_audio_ws(websocket: WebSocket, session_id: str, free
                 continue
 
             # Resample 8kHz telephony audio to 16kHz AI pipeline format
-            pcm_16k_bytes = AudioResampler.resample_8k_to_16k(pcm_8k_bytes)
+            _ = transport.process_incoming_telephony_audio(pcm_8k_bytes)
 
             # In the pipeline runner, pcm_16k_bytes is passed directly to the unified AI pipeline
 

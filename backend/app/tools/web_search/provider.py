@@ -1,10 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
-from urllib.parse import urlparse
+from typing import Optional, Any
 
 from app.config import config
 from app.utils.logging import logger
-from app.services.search.provider import SearchResult, SearchProvider
+from app.services.search.provider import SearchProvider
 from app.services.search.duckduckgo import DuckDuckGoProvider
 from app.services.search.searxng import SearXNGProvider
 from app.services.search.tavily import TavilyProvider

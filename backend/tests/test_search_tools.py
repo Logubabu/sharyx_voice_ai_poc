@@ -3,7 +3,6 @@ import pytest
 from app.services.search.provider import SearchResult
 from app.services.search.tools import (
     handle_web_search,
-    handle_web_fetch,
     filter_and_rank_results,
     sanitize_web_content,
     WEB_SEARCH_SCHEMA,

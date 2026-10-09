@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import math
-import os
 import re
 from abc import ABC, abstractmethod
 from typing import List
@@ -115,7 +114,7 @@ class EmbeddingProviderFactory:
         p_type = provider_type.lower()
         if p_type in ("sentence-transformers", "local", "auto"):
             try:
-                import sentence_transformers
+                __import__("sentence_transformers")
                 return SentenceTransformersEmbeddingProvider(model_name=model_name)
             except ImportError:
                 logger.info("[EMBEDDING] sentence_transformers library not installed. Using DeterministicHashEmbeddingProvider.")

@@ -3,24 +3,13 @@ import pytest
 import tempfile
 import shutil
 import os
-import sys
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.config import config
 from app.pipeline import VoicePipelineManager
-from knowledge_base.service import KnowledgeBaseService, kb_service
+from knowledge_base.service import KnowledgeBaseService
 from knowledge_base.schemas import KnowledgeBaseCreate
-from pipecat.frames.frames import (
-    TranscriptionFrame,
-    TextFrame,
-    FunctionCallInProgressFrame,
-    FunctionCallResultFrame,
-    TTSStartedFrame,
-    TTSAudioRawFrame,
-    TTSStoppedFrame,
-    UserStartedSpeakingFrame,
-)
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 
 
@@ -213,7 +202,7 @@ async def test_session_cleanup():
     manager = VoicePipelineManager(config)
     transport = MockWebCallTransport()
 
-    session = await manager.start_session(
+    _ = await manager.start_session(
         session_id="test_cleanup_session",
         transport=transport,
         is_webcall=True,

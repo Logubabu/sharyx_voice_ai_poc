@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from app.audio.transports.base import BaseVoiceTransport
 from app.audio.codec import AudioResampler
 from app.utils.logging import logger

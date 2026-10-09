@@ -1,4 +1,3 @@
-import json
 from typing import Any, Dict, Callable
 from app.utils.logging import logger
 from app.services.audio_processor import audio_processor_factory
@@ -172,7 +171,7 @@ async def handle_freeswitch_esl_command(function_name: str, tool_call_id: str, a
 
 async def handle_get_audio_processor_status(function_name: str, tool_call_id: str, args: Dict[str, Any], llm: Any, context: Any, result_callback: Callable):
     """Tool Handler: Gets current running noise cancellation filter and audio loop metrics."""
-    logger.info(f"[TOOL-REGISTRY] Executing get_audio_processor_status")
+    logger.info("[TOOL-REGISTRY] Executing get_audio_processor_status")
     status = audio_processor_factory.get_active_filter_status()
     esl_status = freeswitch_esl_service.get_status()
     

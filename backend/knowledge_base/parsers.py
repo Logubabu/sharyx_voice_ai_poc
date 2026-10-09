@@ -3,7 +3,7 @@ import json
 import csv
 import re
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple
+from typing import List
 
 from knowledge_base.exceptions import DocumentProcessingError
 from app.utils.logging import logger

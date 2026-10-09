@@ -5,6 +5,12 @@ from app.config import config
 from app.tools.base import BaseTool
 from app.tools.web_search.tool import WebSearchTool
 from app.tools.knowledge_search.tool import KnowledgeSearchTool
+from app.tools.callback_tools import (
+    ScheduleCallbackTool,
+    RescheduleCallbackTool,
+    CancelCallbackTool,
+    GetCallbackStatusTool,
+)
 from app.utils.logging import logger
 
 
@@ -19,6 +25,10 @@ class ToolRegistry:
         """Registers core tools into the registry."""
         self.register_tool(WebSearchTool())
         self.register_tool(KnowledgeSearchTool())
+        self.register_tool(ScheduleCallbackTool())
+        self.register_tool(RescheduleCallbackTool())
+        self.register_tool(CancelCallbackTool())
+        self.register_tool(GetCallbackStatusTool())
 
     def register_tool(self, tool: BaseTool):
         """Registers a BaseTool instance in the registry."""

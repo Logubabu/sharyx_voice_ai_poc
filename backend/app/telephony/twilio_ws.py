@@ -22,19 +22,35 @@ async def handle_twilio_audio_ws(websocket: WebSocket):
 
     try:
         # 1. Read initial Twilio metadata handshake messages to extract streamSid and callSid
+        start_timeout = 5.0
+        start_time = asyncio.get_event_loop().time()
         while not stream_sid:
-            msg_str = await websocket.receive_text()
-            msg_data = json.loads(msg_str)
-            event_type = msg_data.get("event")
+            elapsed = asyncio.get_event_loop().time() - start_time
+            remaining = max(0.1, start_timeout - elapsed)
+            try:
+                msg_str = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                msg_data = json.loads(msg_str)
+                event_type = msg_data.get("event")
 
-            if event_type == "start":
-                start_data = msg_data.get("start", {})
-                stream_sid = start_data.get("streamSid")
-                call_sid = start_data.get("callSid")
-                logger.info(f"[TWILIO-WS] Received start event - streamSid: '{stream_sid}', callSid: '{call_sid}'")
+                if event_type == "start":
+                    start_data = msg_data.get("start", {})
+                    stream_sid = start_data.get("streamSid") or msg_data.get("streamSid")
+                    call_sid = start_data.get("callSid") or msg_data.get("callSid")
+                    logger.info(f"[TWILIO-WS] Received start event - streamSid: '{stream_sid}', callSid: '{call_sid}'")
+                    break
+                elif event_type == "connected":
+                    logger.info("[TWILIO-WS] Received connected event from Twilio. Awaiting start event...")
+                elif event_type == "media":
+                    stream_sid = msg_data.get("streamSid")
+                    if stream_sid:
+                        logger.warning(f"[TWILIO-WS] Received media event before start event. Inferred streamSid: '{stream_sid}'")
+                        break
+            except asyncio.TimeoutError:
+                logger.warning(f"[TWILIO-WS] Handshake timeout ({start_timeout}s) waiting for start event. Proceeding with fallback IDs.")
                 break
-            elif event_type == "connected":
-                logger.info("[TWILIO-WS] Received connected event from Twilio. Awaiting start event...")
+            except Exception as e:
+                logger.warning(f"[TWILIO-WS] Exception during initial handshake read: {e}")
+                break
 
         if not stream_sid:
             stream_sid = f"stream_{id(websocket)}"
@@ -77,12 +93,35 @@ async def handle_twilio_audio_ws(websocket: WebSocket):
         )
 
         # 4. Attach transport and launch Pipecat pipeline (8kHz telephony audio)
+        from app.callbacks.repository import callback_repository
+
+        cb = await callback_repository.get_callback(call_sid)
+        if not cb:
+            active_cbs = await callback_repository.list_callbacks(status="DIALING", limit=5)
+            if active_cbs:
+                cb = active_cbs[0]
+                await callback_repository.update_status(cb.id, target_status="IN_PROGRESS", call_sid=call_sid)
+
+        tenant_id = cb.tenant_id if cb else "default_tenant"
+        extra_prompt = None
+        if cb:
+            extra_prompt = (
+                f"OUTBOUND CALLBACK CONTEXT:\n"
+                f"- Customer Name: {cb.customer_name}\n"
+                f"- Reason: {cb.reason}\n"
+                f"- Context: {cb.callback_context or 'N/A'}\n"
+                f"Instruction: Greet the customer warmly by name and state that you are calling them back as requested."
+            )
+            logger.info(f"[TWILIO-WS] Associated active callback '{cb.id}' with call '{call_sid}' for customer '{cb.customer_name}'")
+
         session = await pipeline_manager.start_session(
             session_id=call_sid,
             transport=transport,
             audio_in_sample_rate=8000,
             audio_out_sample_rate=8000,
             is_webcall=False,
+            tenant_id=tenant_id,
+            extra_system_prompt=extra_prompt,
         )
 
         logger.info(f"[TWILIO-WS] Pipecat Voice AI pipeline active for call '{call_sid}' (streamSid: {stream_sid})")

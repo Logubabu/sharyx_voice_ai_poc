@@ -1,4 +1,3 @@
-import pytest
 from app.tools.registry import ToolRegistry
 from app.tools.web_search import WebSearchTool
 

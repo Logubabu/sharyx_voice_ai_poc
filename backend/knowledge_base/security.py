@@ -1,5 +1,4 @@
 import re
-from typing import Dict, Any, List
 
 from knowledge_base.exceptions import TenantAccessError
 from app.utils.logging import logger

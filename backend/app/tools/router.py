@@ -171,7 +171,7 @@ class ToolRouter:
 
         # 1. Feature Flag Check
         if not getattr(config, "WEBCALL_TOOL_CALLING_ENABLED", True):
-            logger.warning(f"[TOOL-ROUTER][REJECT] Tool calling disabled by WEBCALL_TOOL_CALLING_ENABLED=false")
+            logger.warning("[TOOL-ROUTER][REJECT] Tool calling disabled by WEBCALL_TOOL_CALLING_ENABLED=false")
             return {
                 "tool": tool_name,
                 "success": False,

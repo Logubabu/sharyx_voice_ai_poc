@@ -1,4 +1,5 @@
 import asyncio
+import math
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 
@@ -51,7 +52,7 @@ class CrossEncoderReranker(Reranker):
             for score, chunk in zip(scores, candidate_chunks):
                 chunk_copy = dict(chunk)
                 # Sigmoid float normalization
-                norm_score = 1.0 / (1.0 + float(np.exp(-score))) if hasattr(score, "item") else float(score)
+                norm_score = 1.0 / (1.0 + math.exp(-float(score))) if hasattr(score, "item") else float(score)
                 chunk_copy["score"] = round(norm_score, 4)
                 reranked.append(chunk_copy)
 

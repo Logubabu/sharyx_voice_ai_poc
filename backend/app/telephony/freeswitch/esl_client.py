@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Callable
 from app.utils.logging import logger
 from app.utils.audit import audit_logger
 
@@ -22,7 +22,7 @@ class FreeSWITCHESLClient:
         self.is_connected = False
         self.event_callbacks: Dict[str, Callable] = {}
 
-    async def connect() -> bool:
+    async def connect(self) -> bool:
         """Connects to FreeSWITCH ESL TCP port asynchronously."""
         try:
             # Simulate ESL async connection handshake

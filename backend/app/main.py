@@ -22,6 +22,8 @@ app = FastAPI(
 )
 
 from app.routers.knowledge_base import router as kb_router
+from app.routers.callbacks import router as callbacks_router
+from app.callbacks.scheduler import callback_scheduler_worker
 
 # Configure CORS
 app.add_middleware(
@@ -32,8 +34,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include Knowledge Base REST API router
+# Include REST API routers
 app.include_router(kb_router)
+app.include_router(callbacks_router)
 
 
 @app.on_event("startup")
@@ -60,7 +63,19 @@ async def warm_up_services():
         logger.info("[CONFIG] Voice pipeline pre-warming complete. Backend ready for WebRTC connections.")
     except Exception as e:
         logger.warning(f"[CONFIG] Pre-warming notice: {e}")
+
+    # Start background scheduled callback worker
+    if getattr(config, "CALLBACK_WORKER_ENABLED", True):
+        await callback_scheduler_worker.start()
+
     logger.info("==================================================")
+
+
+@app.on_event("shutdown")
+async def shutdown_services():
+    """Gracefully shuts down background workers."""
+    if getattr(config, "CALLBACK_WORKER_ENABLED", True):
+        await callback_scheduler_worker.stop()
 
 
 from pipecat.transports.smallwebrtc.request_handler import SmallWebRTCRequestHandler, SmallWebRTCRequest
@@ -171,7 +186,6 @@ async def execute_freeswitch_esl(req: ESLExecuteRequest):
 
 
 from fastapi import Request
-from app.telephony.twilio import validate_twilio_request
 from app.telephony.provider import get_telephony_provider
 
 
@@ -180,35 +194,23 @@ from app.telephony.provider import get_telephony_provider
 @app.api_route("/api/telephony/twilio/twiml", methods=["GET", "POST", "HEAD"])
 async def get_twilio_voice_twiml(request: Request):
     """Twilio Inbound Call Webhook. Returns TwiML XML payload to connect call audio to Pipecat WebSocket stream."""
-    url = str(request.url)
-    form_params = {}
-    if request.method == "POST":
-        try:
-            form_data = await request.form()
-            form_params = {k: str(v) for k, v in form_data.items()}
-        except Exception:
-            pass
-
     twiml_url_override = None
     try:
-        req_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or ""
-        req_scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
-
-        is_local = "localhost" in req_host or "127.0.0.1" in req_host
-
-        if req_host and not is_local:
-            # Twilio requires wss:// scheme for all remote non-localhost WebSocket URLs
-            twiml_url_override = f"wss://{req_host}/api/twilio/media-stream"
+        public_url = config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL
+        if public_url and "localhost" not in public_url and "127.0.0.1" not in public_url:
+            clean_host = public_url.replace("wss://", "").replace("ws://", "").replace("https://", "").replace("http://", "").rstrip("/")
+            twiml_url_override = f"wss://{clean_host}/api/twilio/media-stream"
         else:
-            configured_url = config.TWILIO_WEBHOOK_BASE_URL or config.PUBLIC_BASE_URL
-            if configured_url and "localhost" not in configured_url and "127.0.0.1" not in configured_url:
-                clean_host = configured_url.replace("https://", "").replace("http://", "").rstrip("/")
-                twiml_url_override = f"wss://{clean_host}/api/twilio/media-stream"
-            elif req_host:
-                ws_scheme = "ws" if is_local else "wss"
-                twiml_url_override = f"{ws_scheme}://{req_host}/api/twilio/media-stream"
-                if is_local:
-                    logger.warning(f"[TWILIO-WEBHOOK][WARNING] Media stream URL is pointing to localhost ('{twiml_url_override}'). Twilio cloud servers cannot reach localhost! Set PUBLIC_BASE_URL in .env to your public ngrok/devtunnels URL.")
+            req_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc or ""
+            req_host = req_host.split(",")[0].strip()
+            is_local = "localhost" in req_host or "127.0.0.1" in req_host
+            ws_scheme = "ws" if is_local else "wss"
+            twiml_url_override = f"{ws_scheme}://{req_host}/api/twilio/media-stream"
+            if is_local:
+                logger.warning(
+                    f"[TWILIO-WEBHOOK][WARNING] Media stream URL is pointing to localhost ('{twiml_url_override}'). "
+                    "Twilio cloud servers cannot reach localhost! Set PUBLIC_BASE_URL in .env to your public ngrok/devtunnels URL."
+                )
     except Exception as e:
         logger.warning(f"[TWILIO-WEBHOOK] Could not parse host from request headers: {e}")
 
@@ -291,8 +293,8 @@ async def get_transports_status():
 async def start_call(req: StartCallRequest | None = None):
     """Initializes a new Voice AI logical session ID without starting an unattached pipeline."""
     session_id = (req and req.session_id) or f"session_{uuid.uuid4().hex[:8]}"
-    logger.info(f"==================================================")
-    logger.info(f"VOICE AI SESSION")
+    logger.info("==================================================")
+    logger.info("VOICE AI SESSION")
     logger.info(f"[SESSION] Created: {session_id}")
 
     return {
@@ -305,7 +307,7 @@ async def start_call(req: StartCallRequest | None = None):
 async def webrtc_offer(req: OfferRequest):
     """Handles WebRTC SDP offer/answer negotiation and creates the browser-connected Pipecat pipeline."""
     session_id = req.session_id or f"session_{uuid.uuid4().hex[:8]}"
-    logger.info(f"[WEBRTC] SDP offer received")
+    logger.info(f"[WEBRTC] SDP offer received for session '{session_id}'")
 
     try:
         request = SmallWebRTCRequest(
@@ -324,7 +326,7 @@ async def webrtc_offer(req: OfferRequest):
                 await pipeline_manager.stop_session(session_id)
 
             transport = create_webrtc_transport(connection=connection, cfg=config)
-            logger.info(f"[WEBRTC] Transport created")
+            logger.info(f"[WEBRTC] Transport created for session '{session_id}'")
 
             # Attach and start the Pipecat pipeline to this actual WebRTC connection
             await pipeline_manager.start_session(
@@ -334,7 +336,7 @@ async def webrtc_offer(req: OfferRequest):
                 tenant_id=req.tenant_id or "default_tenant",
                 knowledge_base_id=req.knowledge_base_id,
             )
-            logger.info(f"[WEBRTC] connected")
+            logger.info(f"[WEBRTC] WebRTC session '{session_id}' connected successfully")
 
         answer = await webrtc_request_handler.handle_web_request(
             request=request,
