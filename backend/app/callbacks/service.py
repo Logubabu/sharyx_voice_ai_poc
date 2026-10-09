@@ -36,8 +36,12 @@ class CallbackService:
     async def schedule_callback(self, req: CallbackCreateRequest) -> CallbackResponse:
         """Schedules a new voice callback with E.164 normalization, timezone resolution, and idempotency."""
         try:
+            raw_time = req.requested_time or req.scheduled_at
+            if not raw_time:
+                raise TimeResolverError("Scheduled time is required.")
+
             phone_norm = normalize_e164_phone(req.phone_number)
-            time_res = parse_natural_language_time(req.requested_time, user_tz_str=req.timezone)
+            time_res = parse_natural_language_time(raw_time, user_tz_str=req.timezone)
 
             scheduled_at_utc = time_res["scheduled_at_utc"]
             tz_name = time_res["timezone"]
@@ -48,16 +52,19 @@ class CallbackService:
             cb_id = f"cb_{uuid.uuid4().hex[:12]}"
             now_iso = datetime.now(timezone.utc).isoformat()
 
+            cust_name = req.contact_name if req.contact_name and req.contact_name != "Valued Customer" else (req.customer_name or "Valued Customer")
+            cb_reason = req.callback_reason if req.callback_reason and req.callback_reason != "Customer requested callback" else (req.reason or "Customer requested callback")
+
             cb_model = CallbackModel(
                 id=cb_id,
                 tenant_id=tenant_id,
-                customer_id=req.customer_name,
+                customer_id=cust_name,
                 conversation_id=conv_id,
                 source_call_id=req.call_id,
                 phone_number=phone_norm,
                 masked_phone_number=mask_phone_number(phone_norm),
-                customer_name=req.customer_name or "Valued Customer",
-                reason=req.reason or "Customer requested callback",
+                customer_name=cust_name,
+                reason=cb_reason,
                 callback_context=req.callback_context or "",
                 requested_time_text=req.requested_time,
                 scheduled_at_utc=scheduled_at_utc,

@@ -19,12 +19,13 @@ class CallbackStatus(str, Enum):
     RETRY_PENDING = "RETRY_PENDING"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+    WAITING_FOR_CREDITS = "WAITING_FOR_CREDITS"
 
 
 # Allowed status transitions in the callback state machine
 ALLOWED_STATUS_TRANSITIONS = {
     CallbackStatus.PENDING: {CallbackStatus.SCHEDULED, CallbackStatus.CANCELLED, CallbackStatus.FAILED},
-    CallbackStatus.SCHEDULED: {CallbackStatus.QUEUED, CallbackStatus.DIALING, CallbackStatus.CANCELLED, CallbackStatus.EXPIRED, CallbackStatus.FAILED},
+    CallbackStatus.SCHEDULED: {CallbackStatus.QUEUED, CallbackStatus.DIALING, CallbackStatus.CANCELLED, CallbackStatus.EXPIRED, CallbackStatus.FAILED, CallbackStatus.WAITING_FOR_CREDITS},
     CallbackStatus.QUEUED: {CallbackStatus.DIALING, CallbackStatus.CANCELLED, CallbackStatus.FAILED, CallbackStatus.SCHEDULED},
     CallbackStatus.DIALING: {CallbackStatus.RINGING, CallbackStatus.IN_PROGRESS, CallbackStatus.ANSWERED, CallbackStatus.NO_ANSWER, CallbackStatus.BUSY, CallbackStatus.VOICEMAIL, CallbackStatus.FAILED, CallbackStatus.RETRY_PENDING},
     CallbackStatus.RINGING: {CallbackStatus.IN_PROGRESS, CallbackStatus.ANSWERED, CallbackStatus.NO_ANSWER, CallbackStatus.BUSY, CallbackStatus.VOICEMAIL, CallbackStatus.FAILED, CallbackStatus.RETRY_PENDING},
@@ -35,9 +36,10 @@ ALLOWED_STATUS_TRANSITIONS = {
     CallbackStatus.BUSY: {CallbackStatus.RETRY_PENDING, CallbackStatus.FAILED},
     CallbackStatus.VOICEMAIL: {CallbackStatus.RETRY_PENDING, CallbackStatus.COMPLETED, CallbackStatus.FAILED},
     CallbackStatus.FAILED: {CallbackStatus.RETRY_PENDING, CallbackStatus.SCHEDULED},
-    CallbackStatus.RETRY_PENDING: {CallbackStatus.SCHEDULED, CallbackStatus.QUEUED, CallbackStatus.DIALING, CallbackStatus.CANCELLED, CallbackStatus.FAILED},
+    CallbackStatus.RETRY_PENDING: {CallbackStatus.SCHEDULED, CallbackStatus.QUEUED, CallbackStatus.DIALING, CallbackStatus.CANCELLED, CallbackStatus.FAILED, CallbackStatus.WAITING_FOR_CREDITS},
     CallbackStatus.CANCELLED: set(),  # Terminal state
     CallbackStatus.EXPIRED: {CallbackStatus.SCHEDULED, CallbackStatus.RETRY_PENDING},
+    CallbackStatus.WAITING_FOR_CREDITS: {CallbackStatus.SCHEDULED, CallbackStatus.CANCELLED, CallbackStatus.QUEUED, CallbackStatus.DIALING},
 }
 
 
@@ -93,14 +95,18 @@ class CallbackModel(BaseModel):
 
 class CallbackCreateRequest(BaseModel):
     phone_number: str
-    requested_time: str
+    requested_time: Optional[str] = None
+    scheduled_at: Optional[str] = None
     timezone: Optional[str] = None
     reason: Optional[str] = "Customer requested callback"
+    callback_reason: Optional[str] = None
     customer_name: Optional[str] = "Valued Customer"
+    contact_name: Optional[str] = None
     conversation_id: Optional[str] = ""
     call_id: Optional[str] = None
     callback_context: Optional[str] = ""
     tenant_id: Optional[str] = "default_tenant"
+    priority: Optional[str] = "normal"
 
 
 class CallbackRescheduleRequest(BaseModel):

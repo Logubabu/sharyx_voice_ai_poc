@@ -6,12 +6,13 @@ import { NoiseCancellationPanel } from './components/NoiseCancellationPanel';
 import { TransportSelector, type VoiceMode } from './components/TransportSelector';
 import { OutboundDialer } from './components/OutboundDialer';
 import { KnowledgeBaseManager } from './components/KnowledgeBaseManager';
+import { ScheduledCallbacksPanel } from './components/ScheduledCallbacksPanel';
 import { voiceService, type CallState, type TranscriptItem } from './services/voice';
-import { Radio, Mic, BookOpen } from 'lucide-react';
+import { Radio, Mic, BookOpen, Calendar } from 'lucide-react';
 import './styles/App.css';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'voice' | 'kb'>('voice');
+  const [activeTab, setActiveTab] = useState<'voice' | 'kb' | 'callbacks'>('voice');
   const [callState, setCallState] = useState<CallState>('idle');
   const [voiceMode, setVoiceMode] = useState<VoiceMode>('webrtc');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -81,7 +82,7 @@ export function App() {
           SharyX Voice AI Platform
         </h1>
         <p className="text-sm text-slate-400 mt-2">
-          Real-Time Voice Assistant, Multi-Tenant Knowledge Base (RAG) & Tool Calling
+          Real-Time Voice Assistant, Multi-Tenant Knowledge Base (RAG) & Scheduled Callbacks
         </p>
 
         {/* Tab Navigation */}
@@ -108,6 +109,17 @@ export function App() {
             >
               <BookOpen className="w-4 h-4" />
               <span>Knowledge Base (RAG)</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('callbacks')}
+              className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'callbacks'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Scheduled Callbacks</span>
             </button>
           </div>
         </div>
@@ -136,8 +148,10 @@ export function App() {
 
             <NoiseCancellationPanel />
           </>
-        ) : (
+        ) : activeTab === 'kb' ? (
           <KnowledgeBaseManager />
+        ) : (
+          <ScheduledCallbacksPanel />
         )}
       </main>
 
