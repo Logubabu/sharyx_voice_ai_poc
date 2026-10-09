@@ -180,3 +180,30 @@ async def test_search_knowledge_base(
         top_k=req.top_k,
         category=req.category,
     )
+
+
+@router.get("/debug/search", summary="Diagnostic search endpoint to verify indexed document retrieval")
+async def debug_search_knowledge_base(
+    q: str = Query(..., description="Search query string"),
+    tenant_id: Optional[str] = Query("default_tenant"),
+    kb_id: Optional[str] = Query(None),
+    x_tenant_id: Optional[str] = Header(None),
+):
+    tid = x_tenant_id or tenant_id or "default_tenant"
+    docs = await kb_service.list_documents(kb_id=kb_id or "default_kb", tenant_id=tid) if kb_id else []
+    search_res = await kb_service.search(
+        query=q,
+        tenant_id=tid,
+        knowledge_base_id=kb_id,
+        top_k=5,
+    )
+    return {
+        "query": q,
+        "tenant_id": tid,
+        "knowledge_base_id": kb_id,
+        "documents_found": len(docs),
+        "found": search_res.found,
+        "confidence": search_res.confidence,
+        "results_count": len(search_res.results),
+        "results": [r.model_dump() for r in search_res.results],
+    }

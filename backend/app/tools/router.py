@@ -13,12 +13,13 @@ from app.utils.audit import audit_logger
 
 
 class TurnTracker:
-    """Tracks tool call counts, duplicate queries, and execution state within a single conversational turn."""
+    """Tracks tool call counts, duplicate queries, execution state, and cached results within a single conversational turn."""
 
     def __init__(self, max_calls_per_turn: int = 3):
         self.max_calls = max_calls_per_turn
         self.call_count = 0
         self.turn_history: List[str] = []
+        self.turn_results: Dict[str, Dict[str, Any]] = {}
 
     def can_call(self) -> bool:
         return self.call_count < self.max_calls
@@ -30,14 +31,25 @@ class TurnTracker:
         self.turn_history.append(fingerprint)
         return fingerprint
 
+    def record_result(self, tool_name: str, args: Dict[str, Any], result: Dict[str, Any]):
+        fingerprint_str = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
+        fingerprint = hashlib.md5(fingerprint_str.encode("utf-8")).hexdigest()
+        self.turn_results[fingerprint] = result
+
     def is_duplicate(self, tool_name: str, args: Dict[str, Any]) -> bool:
         fingerprint_str = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
         fingerprint = hashlib.md5(fingerprint_str.encode("utf-8")).hexdigest()
         return fingerprint in self.turn_history
 
+    def get_cached_result(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        fingerprint_str = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
+        fingerprint = hashlib.md5(fingerprint_str.encode("utf-8")).hexdigest()
+        return self.turn_results.get(fingerprint)
+
     def reset(self):
         self.call_count = 0
         self.turn_history.clear()
+        self.turn_results.clear()
 
 
 class ToolRouter:
@@ -48,6 +60,7 @@ class ToolRouter:
         self.session_turns: Dict[str, TurnTracker] = {}
         self.session_call_counts: Dict[str, int] = {}
         self.active_tool_tasks: Dict[str, Dict[str, asyncio.Task]] = {}
+        self.completed_tool_calls: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def get_turn_tracker(self, session_id: str) -> TurnTracker:
         if session_id not in self.session_turns:
@@ -189,6 +202,22 @@ class ToolRouter:
         # 3. Argument Validation & Sanitization
         clean_args = self._validate_args(tool_name, args)
 
+        # Inject active session tenant_id and knowledge_base_id if available
+        try:
+            from app.pipeline import pipeline_manager
+            sess_info = pipeline_manager.active_sessions.get(session_id, {})
+            if "tenant_id" not in clean_args and sess_info.get("tenant_id"):
+                clean_args["tenant_id"] = sess_info["tenant_id"]
+            if "knowledge_base_id" not in clean_args and sess_info.get("knowledge_base_id"):
+                clean_args["knowledge_base_id"] = sess_info["knowledge_base_id"]
+        except Exception:
+            pass
+
+        # 3.5. Idempotency Check per (session_id, tool_call_id)
+        if session_id in self.completed_tool_calls and tool_call_id in self.completed_tool_calls[session_id]:
+            logger.info(f"[TOOL-ROUTER][IDEMPOTENCY] Tool call '{tool_call_id}' already executed for session '{session_id}'. Returning cached result.")
+            return self.completed_tool_calls[session_id][tool_call_id]
+
         # 4. Turn Limit Enforcement (MAX_TOOL_CALLS_PER_TURN)
         tracker = self.get_turn_tracker(session_id)
         if not tracker.can_call():
@@ -213,14 +242,21 @@ class ToolRouter:
                 "message": "Maximum tool call limit for this conversation session reached.",
             }
 
-        # 6. Duplicate Call Prevention within turn
+        # 6. Duplicate Call Prevention within turn (preserves cached tool results)
         if tracker.is_duplicate(tool_name, clean_args):
             logger.info(f"[TOOL-ROUTER][DUPLICATE] Detected duplicate tool call in same turn: '{tool_name}' args={clean_args}")
+            cached_res = tracker.get_cached_result(tool_name, clean_args)
+            if cached_res:
+                res_copy = dict(cached_res)
+                res_copy["duplicate"] = True
+                return res_copy
             return {
                 "tool": tool_name,
                 "success": True,
+                "found": False,
                 "duplicate": True,
                 "message": "Duplicate query already processed in this turn.",
+                "results": [],
             }
 
         # Record call in tracker
@@ -248,6 +284,12 @@ class ToolRouter:
 
             duration_ms = (time.time() - start_time) * 1000
             logger.info(f"[TOOL-ROUTER] Tool '{tool_name}' executed in {duration_ms:.1f}ms (success={result.get('success')})")
+
+            # Store result in turn tracker and completed_tool_calls map for idempotency
+            tracker.record_result(tool_name, clean_args, result)
+            if session_id not in self.completed_tool_calls:
+                self.completed_tool_calls[session_id] = {}
+            self.completed_tool_calls[session_id][tool_call_id] = result
 
             # Broadcast tool call event and sources to browser DataChannel
             event_payload = {

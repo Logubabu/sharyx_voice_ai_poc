@@ -28,12 +28,14 @@ def create_llm_service(cfg: Config, is_webcall: bool = True, system_instruction:
                 logger.warning(f"[LLM] Model '{model}' is deprecated or unavailable. Falling back to active model '{gemini_model}'.")
 
             sys_instruction = system_instruction or cfg.SYSTEM_PROMPT
-            params = {"model": gemini_model}
+            params = {}
             if hasattr(GoogleLLMService, "Settings"):
                 params["settings"] = GoogleLLMService.Settings(
                     model=gemini_model,
                     system_instruction=sys_instruction,
                 )
+            else:
+                params["model"] = gemini_model
             service = GoogleLLMService(api_key=gemini_key, **params)
             
             # Register Tool Registry function definitions & handlers on Gemini service if enabled

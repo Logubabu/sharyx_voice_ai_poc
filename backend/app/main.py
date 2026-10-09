@@ -71,6 +71,8 @@ webrtc_request_handler = SmallWebRTCRequestHandler()
 
 class StartCallRequest(BaseModel):
     session_id: str | None = None
+    tenant_id: str | None = "default_tenant"
+    knowledge_base_id: str | None = None
 
 
 class StopCallRequest(BaseModel):
@@ -82,6 +84,8 @@ class OfferRequest(BaseModel):
     type: str = "offer"
     pc_id: str | None = None
     session_id: str | None = None
+    tenant_id: str | None = "default_tenant"
+    knowledge_base_id: str | None = None
 
 
 class NoiseCancellationRequest(BaseModel):
@@ -327,6 +331,8 @@ async def webrtc_offer(req: OfferRequest):
                 session_id=session_id,
                 transport=transport,
                 connection=connection,
+                tenant_id=req.tenant_id or "default_tenant",
+                knowledge_base_id=req.knowledge_base_id,
             )
             logger.info(f"[WEBRTC] connected")
 

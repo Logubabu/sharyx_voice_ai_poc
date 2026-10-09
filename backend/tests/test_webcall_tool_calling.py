@@ -160,7 +160,7 @@ async def test_pipeline_manager_initialization():
     with patch("app.pipeline.create_stt_service") as mock_stt, \
          patch("app.pipeline.create_llm_service") as mock_llm, \
          patch("app.pipeline.create_tts_service") as mock_tts, \
-         patch("app.pipeline.PipelineRunner") as mock_runner:
+         patch("app.pipeline.WorkerRunner") as mock_runner:
         
         mock_stt.return_value = MagicMock()
         mock_llm.return_value = MagicMock()

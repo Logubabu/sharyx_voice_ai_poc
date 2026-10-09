@@ -62,8 +62,11 @@ class StructureAwareChunker:
                 if current_length + para_len > self.target_chunk_chars and current_buffer:
                     # Flush current buffer to chunk
                     chunk_text = "\n\n".join(current_buffer)
-                    token_count = estimate_token_count(chunk_text)
-                    content_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                    header_prefix = f"[Document: {source_name} | Section: {current_section} | Page: {page.page_number}]\n"
+                    full_content = f"{header_prefix}{chunk_text}" if not chunk_text.startswith("[Document:") else chunk_text
+
+                    token_count = estimate_token_count(full_content)
+                    content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
 
                     metadata = {
                         "document_id": document_id,
@@ -82,7 +85,7 @@ class StructureAwareChunker:
                         document_id=document_id,
                         tenant_id=tenant_id,
                         chunk_index=chunk_index,
-                        content=chunk_text,
+                        content=full_content,
                         page_number=page.page_number,
                         section_title=current_section,
                         token_count=token_count,
@@ -110,8 +113,11 @@ class StructureAwareChunker:
             # Flush remaining buffer for page
             if current_buffer:
                 chunk_text = "\n\n".join(current_buffer)
-                token_count = estimate_token_count(chunk_text)
-                content_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                header_prefix = f"[Document: {source_name} | Section: {current_section} | Page: {page.page_number}]\n"
+                full_content = f"{header_prefix}{chunk_text}" if not chunk_text.startswith("[Document:") else chunk_text
+
+                token_count = estimate_token_count(full_content)
+                content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
 
                 metadata = {
                     "document_id": document_id,
@@ -130,7 +136,7 @@ class StructureAwareChunker:
                     document_id=document_id,
                     tenant_id=tenant_id,
                     chunk_index=chunk_index,
-                    content=chunk_text,
+                    content=full_content,
                     page_number=page.page_number,
                     section_title=current_section,
                     token_count=token_count,

@@ -168,7 +168,8 @@ class QdrantVectorStore(VectorStore):
     def _init_qdrant(self):
         try:
             from qdrant_client import QdrantClient
-            self._client = QdrantClient(url=self.url, api_key=self.api_key, timeout=5.0)
+            key = self.api_key if self.api_key else None
+            self._client = QdrantClient(url=self.url, api_key=key, timeout=5.0, check_compatibility=False)
             # Ping health
             self._client.get_collections()
             self._qdrant_available = True

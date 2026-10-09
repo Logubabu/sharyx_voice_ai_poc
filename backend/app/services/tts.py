@@ -49,11 +49,15 @@ def create_tts_service(cfg: Config) -> Any:
         try:
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
             model = getattr(cfg, "ELEVENLABS_MODEL", "eleven_flash_v2_5")
-            service = ElevenLabsTTSService(
-                api_key=el_key,
-                voice_id=cfg.ELEVENLABS_VOICE_ID,
-                model=model,
-            )
+            if hasattr(ElevenLabsTTSService, "Settings"):
+                settings = ElevenLabsTTSService.Settings(voice=cfg.ELEVENLABS_VOICE_ID, model=model)
+                service = ElevenLabsTTSService(api_key=el_key, settings=settings)
+            else:
+                service = ElevenLabsTTSService(
+                    api_key=el_key,
+                    voice_id=cfg.ELEVENLABS_VOICE_ID,
+                    model=model,
+                )
             logger.info(f"[TTS] Provider: elevenlabs | Voice ID: {cfg.ELEVENLABS_VOICE_ID} | Model: {model} | Initialized")
             return service
         except Exception as e:

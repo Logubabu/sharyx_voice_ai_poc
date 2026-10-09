@@ -40,8 +40,20 @@ class WebSearchTool(BaseTool):
             max_results = 5
 
         logger.info(f"[TOOL-WEB-SEARCH] Executing tool query: '{query}' (max_results={max_results})")
-        return await web_search_service.execute_search(
-            query=query,
-            max_results=max_results,
-            timeout=self.timeout,
-        )
+        try:
+            return await web_search_service.execute_search(
+                query=query,
+                max_results=max_results,
+                timeout=self.timeout,
+            )
+        except Exception as e:
+            logger.exception(f"[TOOL-WEB-SEARCH][ERROR] Web search execution failed: {e}")
+            return {
+                "success": False,
+                "tool": "web_search",
+                "count": 0,
+                "results": [],
+                "sources": [],
+                "error": f"Web search provider error: {str(e)}",
+                "message": "Web search is currently unavailable.",
+            }
