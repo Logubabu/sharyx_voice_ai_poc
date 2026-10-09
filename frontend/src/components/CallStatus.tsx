@@ -1,6 +1,6 @@
 import React from 'react';
 import type { CallState } from '../services/voice';
-import { Mic, MicOff, Volume2, Loader2, AlertCircle, Globe } from 'lucide-react';
+import { Mic, MicOff, Volume2, Loader2, AlertCircle } from 'lucide-react';
 
 interface CallStatusProps {
   state: CallState;

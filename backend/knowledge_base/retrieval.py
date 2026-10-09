@@ -153,7 +153,12 @@ class KnowledgeRetrievalEngine:
             if not passing_hits:
                 duration_ms = (time.time() - start_time) * 1000
                 top_score = reranked_hits[0]["score"] if reranked_hits else 0.0
-                logger.info(f"[RETRIEVAL][CONFIDENCE-GATED] Query '{query}' top score {top_score:.2f} failed threshold ({effective_min_score})")
+                accuracy_pts = top_score * 100.0
+                threshold_pts = effective_min_score * 100.0
+                logger.info(
+                    f"[RETRIEVAL][CONFIDENCE-GATED] Query '{query}' top score {accuracy_pts:.1f} pts ({top_score:.4f}) "
+                    f"failed required threshold {threshold_pts:.1f} pts ({effective_min_score:.4f})"
+                )
                 kb_metrics.record_search(success=True, found=False, latency_ms=duration_ms, confidence=top_score)
                 return KnowledgeSearchResponse(
                     success=True,
@@ -194,6 +199,7 @@ class KnowledgeRetrievalEngine:
 
             duration_ms = (time.time() - start_time) * 1000
             top_confidence = final_results[0].score if final_results else 0.0
+            overall_accuracy_pts = top_confidence * 100.0
 
             res = KnowledgeSearchResponse(
                 success=True,
@@ -209,7 +215,18 @@ class KnowledgeRetrievalEngine:
                 self._cache[cache_key] = res.model_dump()
 
             kb_metrics.record_search(success=True, found=True, latency_ms=duration_ms, confidence=top_confidence)
-            logger.info(f"[RETRIEVAL][SUCCESS] Query '{query}' retrieved {len(final_results)} chunks (confidence: {top_confidence:.2f}, latency: {duration_ms:.1f}ms)")
+            logger.info(
+                f"[RETRIEVAL][ACCURACY] Query '{query}' retrieved {len(final_results)} chunks | "
+                f"Overall Match Accuracy: {overall_accuracy_pts:.1f} pts ({top_confidence:.4f}) | "
+                f"Latency: {duration_ms:.1f}ms"
+            )
+            for idx, item in enumerate(final_results, 1):
+                chunk_accuracy_pts = item.score * 100.0
+                logger.info(
+                    f"[RETRIEVAL][ACCURACY-CHUNK #{idx}] Doc: '{item.document_name}' | "
+                    f"Accuracy Score: {chunk_accuracy_pts:.1f} pts ({item.score:.4f}) | "
+                    f"Section: '{item.section}' | Page: {item.page}"
+                )
             return res
 
         except Exception as e:

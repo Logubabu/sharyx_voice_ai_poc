@@ -27,7 +27,6 @@ export const KnowledgeBaseManager: React.FC = () => {
   const [documents, setDocuments] = useState<KBDocument[]>([]);
   
   // UI States
-  const [loading, setLoading] = useState<boolean>(false);
   const [newKbName, setNewKbName] = useState<string>('');
   const [newKbDesc, setNewKbDesc] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
@@ -52,7 +51,6 @@ export const KnowledgeBaseManager: React.FC = () => {
   }, [selectedKbId]);
 
   const loadKnowledgeBases = async () => {
-    setLoading(true);
     try {
       const data = await kbApiService.listKnowledgeBases(tenantId);
       setKbs(data);
@@ -61,8 +59,6 @@ export const KnowledgeBaseManager: React.FC = () => {
       }
     } catch (err) {
       console.error('Error loading Knowledge Bases:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -369,9 +365,9 @@ export const KnowledgeBaseManager: React.FC = () => {
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
                   <div className="flex items-center space-x-2">
-                    <span className="text-slate-400">Confidence:</span>
-                    <span className={`font-bold ${searchResult.confidence >= 0.7 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {(searchResult.confidence * 100).toFixed(1)}%
+                    <span className="text-slate-400">🎯 Match Accuracy:</span>
+                    <span className={`font-bold ${searchResult.confidence >= 0.75 ? 'text-emerald-400' : searchResult.confidence >= 0.45 ? 'text-amber-400' : 'text-rose-400'}`}>
+                      {(searchResult.confidence * 100).toFixed(1)} pts ({(searchResult.confidence * 100).toFixed(1)}%)
                     </span>
                   </div>
                   <div className="text-slate-400">
@@ -392,8 +388,8 @@ export const KnowledgeBaseManager: React.FC = () => {
                           <div className="flex items-center space-x-2 text-slate-400">
                             {res.section && <span>Section: {res.section}</span>}
                             <span>Page {res.page || 1}</span>
-                            <span className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-200">
-                              Score: {res.score.toFixed(2)}
+                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-bold">
+                              {(res.score * 100).toFixed(1)} pts
                             </span>
                           </div>
                         </div>

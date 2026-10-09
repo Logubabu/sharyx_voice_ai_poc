@@ -110,8 +110,13 @@ class DiagnosticEventProcessor(FrameProcessor):
             if tool_name == "knowledge_search":
                 res_count = len(result.get("results", []))
                 top_score = result.get("confidence", 0.0)
+                accuracy_pts = top_score * 100.0
                 q_text = result.get("query", args.get("query", ""))
-                logger.info(f"[CALL] call_id={self.session_id} [KB] query=\"{q_text}\" results={res_count} top_score={top_score}")
+                scores_str = ", ".join([f"chunk_{i+1}={r.get('score', 0.0)*100:.1f}pts" for i, r in enumerate(result.get("results", []))])
+                logger.info(
+                    f"[CALL] call_id={self.session_id} [KB-ACCURACY] query=\"{q_text}\" results={res_count} "
+                    f"top_accuracy={accuracy_pts:.1f}pts (confidence={top_score:.4f}) scores=[{scores_str}]"
+                )
             else:
                 logger.info(f"[CALL] call_id={self.session_id} [TOOL] name={tool_name} success={result.get('success', True)}")
 

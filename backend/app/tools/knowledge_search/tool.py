@@ -65,6 +65,19 @@ class KnowledgeSearchTool(BaseTool):
                 top_k=top_k,
                 category=category,
             )
+            accuracy_pts = search_res.confidence * 100.0
+            logger.info(
+                f"[TOOL-KB-SEARCH][ACCURACY] Query: '{query}' | Found: {search_res.found} | "
+                f"Overall Match Accuracy: {accuracy_pts:.1f} pts (confidence={search_res.confidence:.4f}) | "
+                f"Chunks Count: {len(search_res.results)}"
+            )
+            for idx, res_item in enumerate(search_res.results, 1):
+                chunk_pts = res_item.score * 100.0
+                logger.info(
+                    f"[TOOL-KB-SEARCH][ACCURACY-CHUNK #{idx}] Doc: '{res_item.document_name}' | "
+                    f"Chunk Accuracy Score: {chunk_pts:.1f} pts ({res_item.score:.4f}) | "
+                    f"Chunk ID: '{res_item.chunk_id}'"
+                )
             return search_res.model_dump()
         except Exception as e:
             logger.exception(f"[TOOL-KB-SEARCH][ERROR] Knowledge base search failed: {e}")
