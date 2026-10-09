@@ -5,11 +5,13 @@ import { Transcript } from './components/Transcript';
 import { NoiseCancellationPanel } from './components/NoiseCancellationPanel';
 import { TransportSelector, type VoiceMode } from './components/TransportSelector';
 import { OutboundDialer } from './components/OutboundDialer';
+import { KnowledgeBaseManager } from './components/KnowledgeBaseManager';
 import { voiceService, type CallState, type TranscriptItem } from './services/voice';
-import { Radio } from 'lucide-react';
+import { Radio, Mic, BookOpen } from 'lucide-react';
 import './styles/App.css';
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<'voice' | 'kb'>('voice');
   const [callState, setCallState] = useState<CallState>('idle');
   const [voiceMode, setVoiceMode] = useState<VoiceMode>('webrtc');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,46 +69,80 @@ export function App() {
   };
 
   return (
-    <div className="w-full max-w-3xl px-4 py-8 mx-auto">
-      <header className="text-center mb-8">
+    <div className="w-full max-w-4xl px-4 py-8 mx-auto">
+      <header className="text-center mb-6">
         <div className="inline-flex items-center space-x-3 bg-slate-900/80 px-4 py-2 rounded-full border border-slate-800 mb-3 shadow-md">
           <Radio className="w-5 h-5 text-emerald-400 animate-pulse" />
           <span className="text-xs font-semibold tracking-wider text-slate-300 uppercase">
-            Production Voice AI Pipeline
+            Production Voice AI & Knowledge Base RAG
           </span>
         </div>
         <h1 className="text-4xl font-extrabold text-white tracking-tight sm:text-5xl">
-          Voice AI WebCall & Telephony
+          SharyX Voice AI Platform
         </h1>
         <p className="text-sm text-slate-400 mt-2">
-          Real-Time Voice Assistant with Selectable Transports (WebRTC / FreeSWITCH), Tool Calling & RNNoise
+          Real-Time Voice Assistant, Multi-Tenant Knowledge Base (RAG) & Tool Calling
         </p>
+
+        {/* Tab Navigation */}
+        <div className="flex justify-center mt-6">
+          <div className="inline-flex p-1 bg-slate-900/90 rounded-2xl border border-slate-800 shadow-inner">
+            <button
+              onClick={() => setActiveTab('voice')}
+              className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'voice'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Mic className="w-4 h-4" />
+              <span>Voice AI Call</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('kb')}
+              className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'kb'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Knowledge Base (RAG)</span>
+            </button>
+          </div>
+        </div>
       </header>
 
       <main className="glass-card rounded-3xl p-6 sm:p-8 relative overflow-hidden">
-        <CallStatus state={callState} errorMessage={errorMessage} micActive={micActive} />
+        {activeTab === 'voice' ? (
+          <>
+            <CallStatus state={callState} errorMessage={errorMessage} micActive={micActive} />
 
-        <TransportSelector mode={voiceMode} onModeChange={setVoiceMode} />
+            <TransportSelector mode={voiceMode} onModeChange={setVoiceMode} />
 
-        {voiceMode === 'freeswitch' ? (
-          <OutboundDialer />
+            {voiceMode === 'freeswitch' ? (
+              <OutboundDialer />
+            ) : (
+              <div className="mt-6">
+                <CallControls
+                  state={callState}
+                  onStartCall={handleStartCall}
+                  onEndCall={handleEndCall}
+                />
+              </div>
+            )}
+
+            <Transcript items={transcript} />
+
+            <NoiseCancellationPanel />
+          </>
         ) : (
-          <div className="mt-6">
-            <CallControls
-              state={callState}
-              onStartCall={handleStartCall}
-              onEndCall={handleEndCall}
-            />
-          </div>
+          <KnowledgeBaseManager />
         )}
-
-        <Transcript items={transcript} />
-
-        <NoiseCancellationPanel />
       </main>
 
       <footer className="text-center text-xs text-slate-500 mt-6">
-        Sharyx Voice AI POC &bull; Built with Pipecat, FreeSWITCH ESL, WebRTC & React + Vite
+        Sharyx Voice AI POC &bull; Built with Pipecat, Qdrant Vector DB, FreeSWITCH ESL, WebRTC & React + Vite
       </footer>
     </div>
   );

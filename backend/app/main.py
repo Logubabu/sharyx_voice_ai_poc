@@ -21,6 +21,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
+from app.routers.knowledge_base import router as kb_router
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Knowledge Base REST API router
+app.include_router(kb_router)
 
 
 @app.on_event("startup")

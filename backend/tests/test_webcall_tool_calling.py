@@ -37,8 +37,8 @@ async def test_tool_registry_registration():
     registry.register_tool(tool)
     assert registry.get_tool("web_search") is not None
     schemas = registry.get_function_schemas(enable_web_search=True)
-    assert len(schemas) == 1
-    assert schemas[0].name == "web_search"
+    assert len(schemas) >= 1
+    assert any(s.name == "web_search" for s in schemas)
 
 
 @pytest.mark.asyncio

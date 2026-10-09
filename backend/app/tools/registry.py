@@ -1,8 +1,10 @@
 from typing import Dict, Any, List, Optional
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 
+from app.config import config
 from app.tools.base import BaseTool
 from app.tools.web_search.tool import WebSearchTool
+from app.tools.knowledge_search.tool import KnowledgeSearchTool
 from app.utils.logging import logger
 
 
@@ -16,6 +18,7 @@ class ToolRegistry:
     def _register_default_tools(self):
         """Registers core tools into the registry."""
         self.register_tool(WebSearchTool())
+        self.register_tool(KnowledgeSearchTool())
 
     def register_tool(self, tool: BaseTool):
         """Registers a BaseTool instance in the registry."""
@@ -40,6 +43,8 @@ class ToolRegistry:
         for name, tool in self.tools.items():
             if name == "web_search" and not enable_web_search:
                 continue
+            if name == "knowledge_search" and not config.KB_ENABLED:
+                continue
 
             handler_func = active_router.create_handler(tool) if active_router else None
             schema = tool.get_schema(handler=handler_func)
@@ -51,6 +56,9 @@ class ToolRegistry:
         for name, tool in self.tools.items():
             if name == "web_search" and not enable_web_search:
                 logger.info(f"[TOOL-REGISTRY] Skipping web search tool '{name}' (web_search disabled)")
+                continue
+            if name == "knowledge_search" and not config.KB_ENABLED:
+                logger.info(f"[TOOL-REGISTRY] Skipping knowledge search tool '{name}' (KB_ENABLED=false)")
                 continue
 
             if hasattr(llm_service, "register_function"):
